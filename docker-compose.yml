@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: pactum
+      POSTGRES_PASSWORD: pactum
+      POSTGRES_DB: pactum
+    ports:
+      - "5432:5432"
+    volumes:
+      - pactum_pgdata:/var/lib/postgresql/data
+
+volumes:
+  pactum_pgdata:
