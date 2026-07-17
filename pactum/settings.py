@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     groq_api_key: str = ""
-    database_url: str = "postgresql://pactum:pactum@localhost:5432/pactum"
+    database_url: str = "postgresql+psycopg://pactum:pactum@localhost:5432/pactum"
 
     model_config = {"env_file": ".env"}
 
