@@ -22,7 +22,7 @@ class PostgresAdapter:
         ).fetchall()
         return dict(rows)
 
-    def sample(self, dataset: str, n: int = 10) -> list[tuple]:
+    def sample(self, dataset: str, n: int = 10) -> list[tuple[object, ...]]:
         return self._conn.execute(
             psycopg.sql.SQL("SELECT * FROM {} LIMIT %(n)s").format(psycopg.sql.Identifier(dataset)),
             {"n": n},

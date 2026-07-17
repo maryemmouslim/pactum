@@ -23,7 +23,7 @@ class Incident(BaseModel):
     kind: Literal["drift", "violation"]
     severity: Literal["low", "medium", "high"]
     signature: str
-    payload: dict
+    payload: dict[str, object]
     contract_version: str
 
 
@@ -38,7 +38,7 @@ class Explanation(BaseModel):
     id: UUID
     incident_id: UUID
     hypotheses: list[Hypothesis]
-    reasoning_trace: list[dict]
+    reasoning_trace: list[dict[str, object]]
     created_at: datetime
 
 

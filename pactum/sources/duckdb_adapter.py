@@ -24,6 +24,6 @@ class DuckDBAdapter:
         rows = self._conn.execute(f"DESCRIBE SELECT * FROM '{path}'").fetchall()
         return {row[0]: row[1] for row in rows}
 
-    def sample(self, dataset: str, n: int = 10) -> list[tuple]:
+    def sample(self, dataset: str, n: int = 10) -> list[tuple[object, ...]]:
         path = self._path_for(dataset)
         return self._conn.execute(f"SELECT * FROM '{path}' LIMIT {n}").fetchall()

@@ -7,7 +7,7 @@ from pactum.settings import settings
 
 class LineageGraph:
     def __init__(self) -> None:
-        self._graph: nx.DiGraph = nx.DiGraph()
+        self._graph: nx.DiGraph[str] = nx.DiGraph()
 
     def add_edge(self, upstream_dataset_id: str, downstream_dataset_id: str) -> None:
         self._graph.add_edge(upstream_dataset_id, downstream_dataset_id)

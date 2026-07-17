@@ -23,12 +23,18 @@ def create_version(contract: Contract) -> None:
         )
 
 
-def _row_to_contract(row: tuple) -> Contract:
+def _row_to_contract(row: tuple[object, ...]) -> Contract:
     columns = [
-        "id", "dataset_id", "version", "yaml", "status",
-        "parent_version_id", "created_at", "created_by",
+        "id",
+        "dataset_id",
+        "version",
+        "yaml",
+        "status",
+        "parent_version_id",
+        "created_at",
+        "created_by",
     ]
-    return Contract(**dict(zip(columns, row)))
+    return Contract.model_validate(dict(zip(columns, row)))
 
 
 def get_active(dataset_id: str) -> Contract | None:

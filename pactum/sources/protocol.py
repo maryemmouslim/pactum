@@ -1,4 +1,3 @@
- 
 from typing import Protocol
 
 
@@ -11,6 +10,6 @@ class SourceAdapter(Protocol):
         """Return {column_name: data_type} for a dataset."""
         ...
 
-    def sample(self, dataset: str, n: int = 10) -> list[tuple]:
+    def sample(self, dataset: str, n: int = 10) -> list[tuple[object, ...]]:
         """Return up to n example rows from a dataset."""
         ...

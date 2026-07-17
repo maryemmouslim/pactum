@@ -1,13 +1,17 @@
+from typing import Any
+
 import pandas as pd
 import whylogs as why
 
 
-def profile_columns(rows: list[tuple], columns: list[str]) -> dict[str, dict]:
+def profile_columns(
+    rows: list[tuple[object, ...]], columns: list[str]
+) -> dict[str, dict[str, object]]:
     """Compute per-column statistics (nulls %, distinct count, min/max) for a sample of rows."""
     df = pd.DataFrame(rows, columns=columns)
     view = why.log(df).view()
 
-    summary = {}
+    summary: dict[str, dict[str, object]] = {}
     for column in columns:
         col_view = view.get_column(column)
         counts = _summary_dict(col_view, "counts")
@@ -25,6 +29,6 @@ def profile_columns(rows: list[tuple], columns: list[str]) -> dict[str, dict]:
     return summary
 
 
-def _summary_dict(col_view, metric_name: str) -> dict:
+def _summary_dict(col_view: Any, metric_name: str) -> dict[str, Any]:
     metric = col_view.get_metric(metric_name)
     return metric.to_summary_dict() if metric else {}
