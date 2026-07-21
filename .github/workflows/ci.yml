@@ -27,4 +27,6 @@ jobs:
         run: uv run mypy --strict pactum/
 
       - name: Test
+        env:
+          GROQ_API_KEY: dummy-key-for-ci
         run: uv run pytest
