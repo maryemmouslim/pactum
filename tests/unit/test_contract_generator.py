@@ -1,6 +1,6 @@
 import pytest
 
-from pactum.agents.contract_generator import understand_source
+from pactum.agents.contract_generator import profile_columns, understand_source
 from pactum.agents.state import ContractGeneratorState
 from pactum.lineage.graph import LineageGraph
 from pactum.sources import registry as source_registry
@@ -15,7 +15,7 @@ class FakeAdapter:
         return {"order_id": "TEXT"}
 
     def sample(self, dataset: str, n: int = 10) -> list[tuple[object, ...]]:
-        return []
+        return [("o1",), ("o2",)]
 
 
 @pytest.fixture(autouse=True)
@@ -36,3 +36,12 @@ def test_understand_source_populates_state(monkeypatch: pytest.MonkeyPatch) -> N
     assert result.columns == {"order_id": "TEXT"}
     assert result.upstream_contracts == []
     assert result.business_context == "Customer purchase events."
+
+
+def test_profile_columns_populates_state() -> None:
+    source_registry.register_source(FakeAdapter())
+
+    result = profile_columns(ContractGeneratorState(dataset_id="orders"))
+
+    assert result.samples == [{"order_id": "o1"}, {"order_id": "o2"}]
+    assert set(result.column_profiles.keys()) == {"order_id"}
