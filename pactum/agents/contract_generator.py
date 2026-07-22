@@ -1,10 +1,21 @@
+from typing import cast
+
+from pydantic import BaseModel, Field
+
 from pactum.agents.state import ContractGeneratorState
+from pactum.llm import get_llm
+from pactum.tools.classify_semantics import classify_semantic_type
 from pactum.tools.profile_columns import profile_column, sample_data
 from pactum.tools.understand_source import (
     fetch_business_context,
     fetch_upstream_contract,
     inspect_schema,
 )
+
+
+class CritiqueResult(BaseModel):
+    approved: bool = Field(description="True if the draft contract has no significant gaps.")
+    feedback: str = Field(description="What is missing or wrong, if not approved.")
 
 
 def understand_source(state: ContractGeneratorState) -> ContractGeneratorState:
@@ -26,3 +37,68 @@ def profile_columns(state: ContractGeneratorState) -> ContractGeneratorState:
             "column_profiles": profile_column.invoke({"dataset_id": state.dataset_id}),
         }
     )
+
+
+def classify_semantics(state: ContractGeneratorState) -> ContractGeneratorState:
+    """Node 3: classify the semantic type of each column using an LLM."""
+    classifications = {}
+    for column_name, data_type in (state.columns or {}).items():
+        classifications[column_name] = classify_semantic_type.invoke(
+            {
+                "column_name": column_name,
+                "data_type": data_type,
+                "profile": state.column_profiles.get(column_name, {}),
+                "samples": [row.get(column_name) for row in state.samples],
+            }
+        )
+    return state.model_copy(update={"semantic_classifications": classifications})
+
+
+def _build_draft_prompt(state: ContractGeneratorState) -> str:
+    columns_desc = "\n".join(
+        f"- {name} ({data_type}): semantic type = "
+        f"{state.semantic_classifications.get(name, {}).get('label', 'unknown')}, "
+        f"null% = {state.column_profiles.get(name, {}).get('null_percent', 'unknown')}"
+        for name, data_type in (state.columns or {}).items()
+    )
+    upstream_desc = "\n".join(c.yaml for c in state.upstream_contracts) or "None"
+    return (
+        f"Dataset: {state.dataset_id}\n"
+        f"Business context: {state.business_context or 'None provided'}\n\n"
+        f"Columns:\n{columns_desc}\n\n"
+        f"Upstream contracts:\n{upstream_desc}\n\n"
+        "Write a data contract for this dataset in ODCS (Open Data Contract Standard) "
+        "YAML format. Add an 'x-pactum:sensitivity: true' field on any column classified "
+        "as pii. Output only the YAML, no explanation."
+    )
+
+
+def draft_contract(state: ContractGeneratorState) -> ContractGeneratorState:
+    """Node 4: draft an ODCS contract in YAML from everything gathered so far."""
+    llm = get_llm("reasoning")
+    response = llm.invoke(_build_draft_prompt(state))
+    return state.model_copy(update={"draft_yaml": cast(str, response.content)})
+
+
+def self_critique(state: ContractGeneratorState) -> ContractGeneratorState:
+    """Node 5: have the LLM re-read the draft and flag any gaps."""
+    llm = get_llm("fast").with_structured_output(CritiqueResult)
+    prompt = (
+        f"Here is a draft data contract:\n\n{state.draft_yaml}\n\n"
+        "Does it have any significant gaps (missing constraints, dropped upstream "
+        "rules, no SLA where one is clearly needed)? Fill in the form."
+    )
+    result = cast(CritiqueResult, llm.invoke(prompt))
+
+    update: dict[str, object] = {"critique_approved": result.approved}
+    if not result.approved:
+        update["critique_feedback"] = result.feedback
+        update["revision_count"] = state.revision_count + 1
+    return state.model_copy(update=update)
+
+
+def route_after_critique(state: ContractGeneratorState) -> str:
+    """Decide the next node after self_critique: revise the draft or write it."""
+    if state.critique_approved or state.revision_count >= 2:
+        return "write_contract"
+    return "draft_contract"
