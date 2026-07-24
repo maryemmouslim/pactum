@@ -22,3 +22,10 @@ def test_chi_squared_detects_drift_for_shifted_category_mix() -> None:
 
     assert result.drifted is True
     assert result.details["p_value"] < 0.05
+
+
+def test_chi_squared_returns_insufficient_data_for_empty_reference() -> None:
+    result = ChiSquaredDetector().detect([], ["pending", "shipped"])
+
+    assert result.insufficient_data is True
+    assert result.drifted is False

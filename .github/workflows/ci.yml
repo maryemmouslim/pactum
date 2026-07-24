@@ -8,6 +8,20 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: pactum
+          POSTGRES_PASSWORD: pactum
+          POSTGRES_DB: pactum
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -25,6 +39,11 @@ jobs:
 
       - name: Type check
         run: uv run mypy --strict pactum/
+
+      - name: Run migrations
+        env:
+          GROQ_API_KEY: dummy-key-for-ci
+        run: uv run alembic upgrade head
 
       - name: Test
         env:

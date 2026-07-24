@@ -1,5 +1,3 @@
-import uuid
-from datetime import UTC, datetime
 from typing import cast
 
 from langgraph.graph import END, StateGraph
@@ -8,8 +6,7 @@ from pydantic import BaseModel, Field
 
 from pactum.agents.state import ContractGeneratorState
 from pactum.llm import get_llm
-from pactum.models import Contract
-from pactum.registry.contract_registry import create_version, list_history
+from pactum.registry.contract_registry import create_version
 from pactum.tools.classify_semantics import classify_semantic_type
 from pactum.tools.profile_columns import profile_column, sample_data
 from pactum.tools.understand_source import (
@@ -68,11 +65,18 @@ def _build_draft_prompt(state: ContractGeneratorState) -> str:
         for name, data_type in (state.columns or {}).items()
     )
     upstream_desc = "\n".join(c.yaml for c in state.upstream_contracts) or "None"
+    feedback_desc = (
+        f"\nThe previous draft was rejected during review. Fix this specific issue:\n"
+        f"{state.critique_feedback}\n"
+        if state.critique_feedback
+        else ""
+    )
     return (
         f"Dataset: {state.dataset_id}\n"
         f"Business context: {state.business_context or 'None provided'}\n\n"
         f"Columns:\n{columns_desc}\n\n"
-        f"Upstream contracts:\n{upstream_desc}\n\n"
+        f"Upstream contracts:\n{upstream_desc}\n"
+        f"{feedback_desc}\n"
         "Write a data contract for this dataset in ODCS (Open Data Contract Standard) "
         "YAML format. Add an 'x-pactum:sensitivity: true' field on any column classified "
         "as pii. Output only the YAML, no explanation."
@@ -112,18 +116,11 @@ def route_after_critique(state: ContractGeneratorState) -> str:
 
 def write_contract(state: ContractGeneratorState) -> ContractGeneratorState:
     """Node 6: persist the drafted contract as a new draft version in the registry."""
-    next_version = len(list_history(state.dataset_id)) + 1
-    contract = Contract(
-        id=uuid.uuid4(),
+    contract = create_version(
         dataset_id=state.dataset_id,
-        version=next_version,
         yaml=state.draft_yaml or "",
-        status="draft",
-        parent_version_id=None,
-        created_at=datetime.now(UTC),
         created_by="contract-generator-agent",
     )
-    create_version(contract)
     return state.model_copy(update={"written_contract": contract})
 
 

@@ -22,3 +22,10 @@ def test_ks_detects_drift_for_shifted_distribution() -> None:
 
     assert result.drifted is True
     assert result.details["p_value"] < 0.05
+
+
+def test_ks_returns_insufficient_data_for_empty_reference() -> None:
+    result = KSDetector().detect([], [1, 2, 3])
+
+    assert result.insufficient_data is True
+    assert result.drifted is False

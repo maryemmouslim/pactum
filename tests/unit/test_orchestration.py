@@ -1,3 +1,4 @@
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -5,6 +6,7 @@ from dagster import materialize
 
 from pactum.agents.contract_generator import CritiqueResult
 from pactum.lineage.graph import LineageGraph
+from pactum.models import Contract
 from pactum.orchestration.definitions import (
     _evaluate_completeness,
     _evaluate_enum,
@@ -319,8 +321,22 @@ def test_full_pipeline_materializes_successfully(monkeypatch: pytest.MonkeyPatch
         "pactum.tools.classify_semantics.get_llm",
         lambda role="fast": FakeLLM(SemanticClassification(label="identifier", confidence=0.9)),
     )
-    monkeypatch.setattr("pactum.agents.contract_generator.list_history", lambda dataset_id: [])
-    monkeypatch.setattr("pactum.agents.contract_generator.create_version", lambda contract: None)
+
+    def fake_create_version(
+        dataset_id: str, yaml: str, created_by: str, status: str = "draft"
+    ) -> Contract:
+        return Contract(
+            id=uuid.uuid4(),
+            dataset_id=dataset_id,
+            version=1,
+            yaml=yaml,
+            status=status,
+            parent_version_id=None,
+            created_at=datetime.now(UTC),
+            created_by=created_by,
+        )
+
+    monkeypatch.setattr("pactum.agents.contract_generator.create_version", fake_create_version)
 
     draft_then_critique_llms = iter(
         [

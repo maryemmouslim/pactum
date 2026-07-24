@@ -1,7 +1,11 @@
+import uuid
+from datetime import UTC, datetime
+
 import pytest
 
 from pactum.agents.contract_generator import (
     CritiqueResult,
+    _build_draft_prompt,
     build_contract_generator_graph,
     classify_semantics,
     draft_contract,
@@ -13,6 +17,7 @@ from pactum.agents.contract_generator import (
 )
 from pactum.agents.state import ContractGeneratorState
 from pactum.lineage.graph import LineageGraph
+from pactum.models import Contract
 from pactum.sources import registry as source_registry
 from pactum.sources.business_context import register_business_context
 from pactum.tools.classify_semantics import SemanticClassification
@@ -142,6 +147,27 @@ def test_draft_contract_populates_state(monkeypatch: pytest.MonkeyPatch) -> None
     assert result.draft_yaml == "apiVersion: v3\nkind: DataContract"
 
 
+def test_build_draft_prompt_includes_feedback_after_rejection() -> None:
+    state = ContractGeneratorState(
+        dataset_id="orders",
+        columns={"order_id": "TEXT"},
+        critique_feedback="Missing a freshness SLA.",
+    )
+
+    prompt = _build_draft_prompt(state)
+
+    assert "Missing a freshness SLA." in prompt
+    assert "rejected during review" in prompt
+
+
+def test_build_draft_prompt_omits_feedback_section_on_first_attempt() -> None:
+    state = ContractGeneratorState(dataset_id="orders", columns={"order_id": "TEXT"})
+
+    prompt = _build_draft_prompt(state)
+
+    assert "rejected during review" not in prompt
+
+
 def test_self_critique_approved_does_not_bump_revision_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -190,35 +216,42 @@ def test_route_after_critique_goes_to_write_when_revision_limit_reached() -> Non
     assert route_after_critique(state) == "write_contract"
 
 
-def test_write_contract_persists_first_version(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("pactum.agents.contract_generator.list_history", lambda dataset_id: [])
-    saved = []
-    monkeypatch.setattr(
-        "pactum.agents.contract_generator.create_version", lambda contract: saved.append(contract)
+def test_write_contract_delegates_version_allocation_to_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # write_contract no longer computes the version/parent itself -- that's
+    # the registry's job now (see contract_registry.create_version), which
+    # allocates it atomically. This test only checks the wiring: the right
+    # arguments get passed, and the registry's result is stored as-is.
+    fake_contract = Contract(
+        id=uuid.uuid4(),
+        dataset_id="orders",
+        version=1,
+        yaml="apiVersion: v3",
+        status="draft",
+        parent_version_id=None,
+        created_at=datetime.now(UTC),
+        created_by="contract-generator-agent",
     )
+    captured: dict[str, object] = {}
+
+    def fake_create_version(
+        dataset_id: str, yaml: str, created_by: str, status: str = "draft"
+    ) -> Contract:
+        captured.update(dataset_id=dataset_id, yaml=yaml, created_by=created_by)
+        return fake_contract
+
+    monkeypatch.setattr("pactum.agents.contract_generator.create_version", fake_create_version)
 
     state = ContractGeneratorState(dataset_id="orders", draft_yaml="apiVersion: v3")
     result = write_contract(state)
 
-    assert result.written_contract is not None
-    assert result.written_contract.version == 1
-    assert result.written_contract.status == "draft"
-    assert result.written_contract.yaml == "apiVersion: v3"
-    assert saved == [result.written_contract]
-
-
-def test_write_contract_increments_version_number(monkeypatch: pytest.MonkeyPatch) -> None:
-    existing = [object(), object()]
-    monkeypatch.setattr(
-        "pactum.agents.contract_generator.list_history", lambda dataset_id: existing
-    )
-    monkeypatch.setattr("pactum.agents.contract_generator.create_version", lambda contract: None)
-
-    state = ContractGeneratorState(dataset_id="orders", draft_yaml="apiVersion: v3")
-    result = write_contract(state)
-
-    assert result.written_contract is not None
-    assert result.written_contract.version == 3
+    assert result.written_contract is fake_contract
+    assert captured == {
+        "dataset_id": "orders",
+        "yaml": "apiVersion: v3",
+        "created_by": "contract-generator-agent",
+    }
 
 
 def test_full_graph_runs_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -228,8 +261,22 @@ def test_full_graph_runs_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
         "pactum.tools.classify_semantics.get_llm",
         lambda role="fast": FakeLLM(SemanticClassification(label="identifier", confidence=0.9)),
     )
-    monkeypatch.setattr("pactum.agents.contract_generator.list_history", lambda dataset_id: [])
-    monkeypatch.setattr("pactum.agents.contract_generator.create_version", lambda contract: None)
+
+    def fake_create_version(
+        dataset_id: str, yaml: str, created_by: str, status: str = "draft"
+    ) -> Contract:
+        return Contract(
+            id=uuid.uuid4(),
+            dataset_id=dataset_id,
+            version=1,
+            yaml=yaml,
+            status=status,
+            parent_version_id=None,
+            created_at=datetime.now(UTC),
+            created_by=created_by,
+        )
+
+    monkeypatch.setattr("pactum.agents.contract_generator.create_version", fake_create_version)
 
     draft_then_critique_llms = iter(
         [

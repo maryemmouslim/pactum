@@ -2,10 +2,11 @@ from typing import SupportsFloat, cast
 
 import numpy as np
 
-from pactum.monitoring.drift.protocol import DriftDetector, DriftResult
+from pactum.monitoring.drift.protocol import DriftDetector, DriftResult, insufficient_data_result
 
 _EPSILON = 1e-6
 _DRIFT_THRESHOLD = 0.25
+_MIN_SAMPLE_SIZE = 2
 
 
 class PSIDetector(DriftDetector):
@@ -14,6 +15,11 @@ class PSIDetector(DriftDetector):
     def detect(self, reference: list[object], current: list[object]) -> DriftResult:
         ref = np.array([float(cast(SupportsFloat, v)) for v in reference if v is not None])
         cur = np.array([float(cast(SupportsFloat, v)) for v in current if v is not None])
+
+        if len(ref) < _MIN_SAMPLE_SIZE or len(cur) < _MIN_SAMPLE_SIZE:
+            return insufficient_data_result(
+                "psi", "reference or current window has fewer than 2 non-null values"
+            )
 
         bin_edges = np.quantile(ref, np.linspace(0, 1, 11))
         bin_edges[0] = -np.inf

@@ -2,7 +2,7 @@ from collections import Counter
 
 from scipy.stats import chi2_contingency
 
-from pactum.monitoring.drift.protocol import DriftDetector, DriftResult
+from pactum.monitoring.drift.protocol import DriftDetector, DriftResult, insufficient_data_result
 
 _SIGNIFICANCE_LEVEL = 0.05
 
@@ -13,6 +13,11 @@ class ChiSquaredDetector(DriftDetector):
     def detect(self, reference: list[object], current: list[object]) -> DriftResult:
         ref = [v for v in reference if v is not None]
         cur = [v for v in current if v is not None]
+
+        if not ref or not cur:
+            return insufficient_data_result(
+                "chi_squared", "reference or current window has no non-null values"
+            )
 
         categories = sorted({str(v) for v in ref} | {str(v) for v in cur})
         ref_counts = Counter(str(v) for v in ref)

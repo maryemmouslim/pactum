@@ -51,12 +51,14 @@ def emit_incident(
     contract_version: str,
     column: str | None = None,
 ) -> Incident:
-    """Emit an incident, reusing an existing open one with the same signature."""
-    signature = build_signature(dataset_id, check_type, column)
+    """Emit an incident, atomically reusing an existing one with the same signature.
 
-    existing = find_open_incident(signature)
-    if existing is not None:
-        return existing
+    Uses INSERT ... ON CONFLICT DO NOTHING instead of a separate check-then-insert
+    (find_open_incident followed by a plain INSERT), so two simultaneous detections
+    of the same problem can never both insert -- the database's unique constraint
+    on `signature` is what actually enforces this, not application-level timing.
+    """
+    signature = build_signature(dataset_id, check_type, column)
 
     incident = Incident(
         id=uuid.uuid4(),
@@ -73,7 +75,7 @@ def emit_incident(
     params["payload"] = psycopg.types.json.Json(incident.payload)
 
     with _connect() as conn:
-        conn.execute(
+        row = conn.execute(
             """
             INSERT INTO incidents
                 (id, dataset_id, detected_at, kind, severity, signature, payload,
@@ -81,11 +83,22 @@ def emit_incident(
             VALUES
                 (%(id)s, %(dataset_id)s, %(detected_at)s, %(kind)s, %(severity)s,
                  %(signature)s, %(payload)s, %(contract_version)s)
+            ON CONFLICT (signature) DO NOTHING
+            RETURNING id, dataset_id, detected_at, kind, severity, signature, payload,
+                      contract_version
             """,
             params,
-        )
+        ).fetchone()
 
-    return incident
+    if row is not None:
+        return _row_to_incident(row)
+
+    existing = find_open_incident(signature)
+    if existing is None:
+        raise RuntimeError(
+            f"Insert conflicted on signature {signature!r} but no existing row was found"
+        )
+    return existing
 
 
 def _row_to_incident(row: tuple[object, ...]) -> Incident:

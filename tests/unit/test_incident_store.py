@@ -1,3 +1,6 @@
+import uuid
+from datetime import UTC, datetime
+
 import pytest
 
 from pactum.models import Incident
@@ -26,8 +29,17 @@ def test_build_signature_differs_by_check_type() -> None:
 
 
 class FakeConnection:
-    def __init__(self) -> None:
+    """Simulates INSERT ... ON CONFLICT DO NOTHING RETURNING ....
+
+    If simulate_conflict is False, fetchone() returns a row built from
+    whatever params were just "inserted" -- mimicking a real RETURNING
+    clause. If True, fetchone() returns None, simulating a skipped insert
+    because a row with this signature already existed.
+    """
+
+    def __init__(self, simulate_conflict: bool = False) -> None:
         self.executed: list[dict[str, object]] = []
+        self._simulate_conflict = simulate_conflict
 
     def __enter__(self) -> "FakeConnection":
         return self
@@ -35,17 +47,32 @@ class FakeConnection:
     def __exit__(self, *args: object) -> bool:
         return False
 
-    def execute(self, sql: str, params: dict[str, object]) -> None:
+    def execute(self, sql: str, params: dict[str, object]) -> "FakeConnection":
         self.executed.append(params)
+        return self
+
+    def fetchone(self) -> tuple[object, ...] | None:
+        if self._simulate_conflict:
+            return None
+        params = self.executed[-1]
+        payload = params["payload"]
+        raw_payload = payload.obj if hasattr(payload, "obj") else payload
+        return (
+            params["id"],
+            params["dataset_id"],
+            params["detected_at"],
+            params["kind"],
+            params["severity"],
+            params["signature"],
+            raw_payload,
+            params["contract_version"],
+        )
 
 
 def test_emit_incident_creates_new_incident_when_none_exists(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "pactum.monitoring.incident_store.find_open_incident", lambda signature: None
-    )
-    fake_conn = FakeConnection()
+    fake_conn = FakeConnection(simulate_conflict=False)
     monkeypatch.setattr("pactum.monitoring.incident_store._connect", lambda: fake_conn)
 
     incident = emit_incident(
@@ -65,25 +92,28 @@ def test_emit_incident_creates_new_incident_when_none_exists(
     assert fake_conn.executed[0]["dataset_id"] == "orders"
 
 
-def test_emit_incident_reuses_existing_open_incident(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_emit_incident_reuses_existing_incident_on_insert_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Simulates: two concurrent calls compute the same signature, the other
+    # one already won the race and inserted, so our INSERT ... ON CONFLICT
+    # is skipped (fetchone() returns None) and we fall back to fetching it.
+    fake_conn = FakeConnection(simulate_conflict=True)
+    monkeypatch.setattr("pactum.monitoring.incident_store._connect", lambda: fake_conn)
+
     existing = Incident(
-        id="12345678-1234-5678-1234-567812345678",  # type: ignore[arg-type]
+        id=uuid.uuid4(),
         dataset_id="orders",
-        detected_at="2026-01-01T00:00:00Z",  # type: ignore[arg-type]
+        detected_at=datetime.now(UTC),
         kind="drift",
         severity="high",
-        signature="abc123",
+        signature=build_signature("orders", "psi", "amount"),
         payload={},
         contract_version="1",
     )
     monkeypatch.setattr(
         "pactum.monitoring.incident_store.find_open_incident", lambda signature: existing
     )
-
-    def _fail_connect() -> None:
-        raise AssertionError("should not connect to the database when reusing an incident")
-
-    monkeypatch.setattr("pactum.monitoring.incident_store._connect", _fail_connect)
 
     incident = emit_incident(
         dataset_id="orders",
@@ -96,3 +126,27 @@ def test_emit_incident_reuses_existing_open_incident(monkeypatch: pytest.MonkeyP
     )
 
     assert incident is existing
+
+
+def test_emit_incident_raises_if_conflict_but_no_row_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Should be practically unreachable (Postgres serializes the conflicting
+    # transaction so the row is always visible afterward) -- but if it ever
+    # happened, fail loudly instead of returning something wrong silently.
+    fake_conn = FakeConnection(simulate_conflict=True)
+    monkeypatch.setattr("pactum.monitoring.incident_store._connect", lambda: fake_conn)
+    monkeypatch.setattr(
+        "pactum.monitoring.incident_store.find_open_incident", lambda signature: None
+    )
+
+    with pytest.raises(RuntimeError):
+        emit_incident(
+            dataset_id="orders",
+            kind="drift",
+            severity="high",
+            check_type="psi",
+            payload={"score": 0.5},
+            contract_version="1",
+            column="amount",
+        )
