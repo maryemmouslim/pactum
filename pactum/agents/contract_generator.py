@@ -1,9 +1,15 @@
+import uuid
+from datetime import UTC, datetime
 from typing import cast
 
+from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel, Field
 
 from pactum.agents.state import ContractGeneratorState
 from pactum.llm import get_llm
+from pactum.models import Contract
+from pactum.registry.contract_registry import create_version, list_history
 from pactum.tools.classify_semantics import classify_semantic_type
 from pactum.tools.profile_columns import profile_column, sample_data
 from pactum.tools.understand_source import (
@@ -102,3 +108,48 @@ def route_after_critique(state: ContractGeneratorState) -> str:
     if state.critique_approved or state.revision_count >= 2:
         return "write_contract"
     return "draft_contract"
+
+
+def write_contract(state: ContractGeneratorState) -> ContractGeneratorState:
+    """Node 6: persist the drafted contract as a new draft version in the registry."""
+    next_version = len(list_history(state.dataset_id)) + 1
+    contract = Contract(
+        id=uuid.uuid4(),
+        dataset_id=state.dataset_id,
+        version=next_version,
+        yaml=state.draft_yaml or "",
+        status="draft",
+        parent_version_id=None,
+        created_at=datetime.now(UTC),
+        created_by="contract-generator-agent",
+    )
+    create_version(contract)
+    return state.model_copy(update={"written_contract": contract})
+
+
+def build_contract_generator_graph() -> CompiledStateGraph[
+    ContractGeneratorState, None, ContractGeneratorState, ContractGeneratorState
+]:
+    """Wire the 6 nodes into a runnable LangGraph state machine."""
+    graph = StateGraph(ContractGeneratorState)
+
+    graph.add_node("understand_source", understand_source)
+    graph.add_node("profile_columns", profile_columns)
+    graph.add_node("classify_semantics", classify_semantics)
+    graph.add_node("draft_contract", draft_contract)
+    graph.add_node("self_critique", self_critique)
+    graph.add_node("write_contract", write_contract)
+
+    graph.set_entry_point("understand_source")
+    graph.add_edge("understand_source", "profile_columns")
+    graph.add_edge("profile_columns", "classify_semantics")
+    graph.add_edge("classify_semantics", "draft_contract")
+    graph.add_edge("draft_contract", "self_critique")
+    graph.add_conditional_edges(
+        "self_critique",
+        route_after_critique,
+        {"draft_contract": "draft_contract", "write_contract": "write_contract"},
+    )
+    graph.add_edge("write_contract", END)
+
+    return graph.compile()

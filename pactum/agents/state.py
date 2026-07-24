@@ -15,3 +15,4 @@ class ContractGeneratorState(BaseModel):
     revision_count: int = 0
     critique_approved: bool | None = None
     critique_feedback: str | None = None
+    written_contract: Contract | None = None

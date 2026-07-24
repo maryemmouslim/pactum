@@ -27,18 +27,23 @@ Tracks what's actually built vs. what's still planned. Update this after each ph
 
 All test/throwaway data cleaned from Postgres (`contracts`, `lineage_edges` tables empty) and scratch files removed before commit.
 
-## Phase 2 — Contract Generator Agent + Monitoring layer (not started)
+## Phase 2 — Contract Generator Agent + Monitoring layer (complete)
 
-**Track A — Contract Generator Agent**
-- 7 tools: `inspect_schema`, `profile_column`, `sample_data`, `classify_semantic_type`, `fetch_upstream_contract`, `fetch_business_context`, `write_contract`
-- LangGraph state machine: understand → profile → classify → draft → self-critique (max 2 revisions) → write
-- Output: ODCS-compliant YAML with `x-pactum:*` extensions
+**Track A — Contract Generator Agent** (`pactum/agents/contract_generator.py`, `pactum/agents/state.py`)
+- 7 tools: `inspect_schema`, `profile_column`, `sample_data`, `classify_semantic_type`, `fetch_upstream_contract`, `fetch_business_context`, `write_contract` (`pactum/tools/`)
+- LangGraph `StateGraph`: understand → profile → classify → draft → self-critique (max 2 revisions, conditional edge via `route_after_critique`) → write
+- Output: ODCS-style YAML draft with `x-pactum:*` extensions, persisted as a new `draft` version via the Contract Registry
+- Verified end-to-end with a full graph `.invoke()` smoke test (mocked LLMs, no real API calls)
 
-**Track B — Monitoring layer**
-- Statistical drift: PSI + KS (numeric), Chi-squared (categorical), freshness delta (timestamp)
-- Contract adherence checks: schema, range/enum, regex, freshness SLA, completeness SLA, referential integrity, uniqueness
-- Incident emission with stable signature (for deduplication)
-- Dagster integration: sources = assets, contracts = derived assets, adherence = asset_checks, incidents = materializations
+**Track B — Monitoring layer** (`pactum/monitoring/`)
+- Statistical drift (`monitoring/drift/`): PSI, KS (`scipy.stats.ks_2samp`), Chi-squared (`scipy.stats.chi2_contingency`), freshness delta — all registered in `drift/registry.py`
+- Contract adherence checks (`monitoring/adherence/`): schema, range, enum, regex, freshness SLA, completeness SLA, referential integrity, uniqueness — each a standalone function returning a shared `Violation` shape
+- Incident emission (`monitoring/incident_store.py`): `emit_incident` + `build_signature` for deduplication, backed by a new `incidents` table (`migrations/versions/41b5ea924013_*`, **not yet applied** — Docker wasn't running when built; run `docker compose up postgres` then `uv run alembic upgrade head`)
+- Dagster integration (`pactum/orchestration/definitions.py`): `source_data` and `contract` assets; all 8 adherence checks wired as asset checks (schema, uniqueness, completeness, range, enum, regex, freshness SLA, referential integrity), each emitting an incident on failure; hourly `ScheduleDefinition`
+- **Known gap**: the 4 drift detectors (PSI, KS, Chi-squared, freshness delta) are built and tested but *not* wired into Dagster — they need a reference-window store (per `DESIGN.md`, "14 days before contract went active") that doesn't exist yet. Wiring them now would mean faking historical data, so this is left as an explicit follow-up rather than done dishonestly.
+- Also still owed: register a real source (nothing calls `register_source` outside tests), and the schedule needs to be manually enabled in the Dagster UI once running.
+
+65 unit tests passing (`tests/unit/`), clean `ruff format`/`ruff check`/`mypy --strict`. Added dependencies: `langgraph`, `scipy` (+ `scipy-stubs` dev), `dagster`.
 
 Target per original roadmap: v0.1.0.
 

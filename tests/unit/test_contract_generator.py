@@ -2,12 +2,14 @@ import pytest
 
 from pactum.agents.contract_generator import (
     CritiqueResult,
+    build_contract_generator_graph,
     classify_semantics,
     draft_contract,
     profile_columns,
     route_after_critique,
     self_critique,
     understand_source,
+    write_contract,
 )
 from pactum.agents.state import ContractGeneratorState
 from pactum.lineage.graph import LineageGraph
@@ -186,3 +188,64 @@ def test_route_after_critique_goes_to_draft_when_not_approved_and_under_limit() 
 def test_route_after_critique_goes_to_write_when_revision_limit_reached() -> None:
     state = ContractGeneratorState(dataset_id="orders", critique_approved=False, revision_count=2)
     assert route_after_critique(state) == "write_contract"
+
+
+def test_write_contract_persists_first_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("pactum.agents.contract_generator.list_history", lambda dataset_id: [])
+    saved = []
+    monkeypatch.setattr(
+        "pactum.agents.contract_generator.create_version", lambda contract: saved.append(contract)
+    )
+
+    state = ContractGeneratorState(dataset_id="orders", draft_yaml="apiVersion: v3")
+    result = write_contract(state)
+
+    assert result.written_contract is not None
+    assert result.written_contract.version == 1
+    assert result.written_contract.status == "draft"
+    assert result.written_contract.yaml == "apiVersion: v3"
+    assert saved == [result.written_contract]
+
+
+def test_write_contract_increments_version_number(monkeypatch: pytest.MonkeyPatch) -> None:
+    existing = [object(), object()]
+    monkeypatch.setattr(
+        "pactum.agents.contract_generator.list_history", lambda dataset_id: existing
+    )
+    monkeypatch.setattr("pactum.agents.contract_generator.create_version", lambda contract: None)
+
+    state = ContractGeneratorState(dataset_id="orders", draft_yaml="apiVersion: v3")
+    result = write_contract(state)
+
+    assert result.written_contract is not None
+    assert result.written_contract.version == 3
+
+
+def test_full_graph_runs_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
+    source_registry.register_source(FakeAdapter())
+    monkeypatch.setattr("pactum.tools.understand_source.load_graph", lambda: LineageGraph())
+    monkeypatch.setattr(
+        "pactum.tools.classify_semantics.get_llm",
+        lambda role="fast": FakeLLM(SemanticClassification(label="identifier", confidence=0.9)),
+    )
+    monkeypatch.setattr("pactum.agents.contract_generator.list_history", lambda dataset_id: [])
+    monkeypatch.setattr("pactum.agents.contract_generator.create_version", lambda contract: None)
+
+    draft_then_critique_llms = iter(
+        [
+            FakeDraftLLM("apiVersion: v3\nkind: DataContract"),
+            FakeCritiqueLLM(CritiqueResult(approved=True, feedback="")),
+        ]
+    )
+    monkeypatch.setattr(
+        "pactum.agents.contract_generator.get_llm",
+        lambda role="reasoning": next(draft_then_critique_llms),
+    )
+
+    app = build_contract_generator_graph()
+    result = app.invoke(ContractGeneratorState(dataset_id="orders"))
+
+    assert result["written_contract"].status == "draft"
+    assert result["written_contract"].version == 1
+    assert result["draft_yaml"] == "apiVersion: v3\nkind: DataContract"
+    assert result["critique_approved"] is True
