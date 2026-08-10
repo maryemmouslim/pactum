@@ -1,15 +1,17 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.6
+    rev: v0.15.21
     hooks:
       - id: ruff
         args: [--fix]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.14.1
+  - repo: local
     hooks:
       - id: mypy
-        args: [--strict]
-        additional_dependencies: [pydantic]
+        name: mypy
+        entry: uv run mypy --strict pactum/
+        language: system
+        pass_filenames: false
         files: ^pactum/
+        

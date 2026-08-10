@@ -5,7 +5,8 @@ from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel, Field
 
 from pactum.agents.state import ContractGeneratorState
-from pactum.llm import get_llm
+from pactum.contract_schema import ParsedContract, render_contract_yaml
+from pactum.llm import get_llm, invoke_structured
 from pactum.registry.contract_registry import create_version
 from pactum.tools.classify_semantics import classify_semantic_type
 from pactum.tools.profile_columns import profile_column, sample_data
@@ -77,17 +78,20 @@ def _build_draft_prompt(state: ContractGeneratorState) -> str:
         f"Columns:\n{columns_desc}\n\n"
         f"Upstream contracts:\n{upstream_desc}\n"
         f"{feedback_desc}\n"
-        "Write a data contract for this dataset in ODCS (Open Data Contract Standard) "
-        "YAML format. Add an 'x-pactum:sensitivity: true' field on any column classified "
-        "as pii. Output only the YAML, no explanation."
+        "Propose a data contract for this dataset: for each column, classify its "
+        "semantic type, decide whether it holds sensitive data (set sensitivity=true "
+        "if so), and propose reasonable constraints (nullable, unique, min/max range, "
+        "allowed values, or a regex pattern) based on the stats and samples above. "
+        "Also propose a dataset-level freshness SLA and completeness SLA if the data "
+        "supports one."
     )
 
 
 def draft_contract(state: ContractGeneratorState) -> ContractGeneratorState:
-    """Node 4: draft an ODCS contract in YAML from everything gathered so far."""
-    llm = get_llm("reasoning")
-    response = llm.invoke(_build_draft_prompt(state))
-    return state.model_copy(update={"draft_yaml": cast(str, response.content)})
+    """Node 4: draft structured contract rules from everything gathered so far."""
+    llm = get_llm("reasoning").with_structured_output(ParsedContract)
+    parsed = cast(ParsedContract, invoke_structured(llm, _build_draft_prompt(state)))
+    return state.model_copy(update={"draft_yaml": render_contract_yaml(parsed)})
 
 
 def self_critique(state: ContractGeneratorState) -> ContractGeneratorState:
@@ -98,7 +102,7 @@ def self_critique(state: ContractGeneratorState) -> ContractGeneratorState:
         "Does it have any significant gaps (missing constraints, dropped upstream "
         "rules, no SLA where one is clearly needed)? Fill in the form."
     )
-    result = cast(CritiqueResult, llm.invoke(prompt))
+    result = cast(CritiqueResult, invoke_structured(llm, prompt))
 
     update: dict[str, object] = {"critique_approved": result.approved}
     if not result.approved:

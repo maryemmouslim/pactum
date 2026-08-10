@@ -24,7 +24,18 @@ class Incident(BaseModel):
     severity: Literal["low", "medium", "high"]
     signature: str
     payload: dict[str, object]
-    contract_version: str
+    contract_version_id: UUID
+    check_type: str
+    column_name: str | None = None
+
+
+class ContractReview(BaseModel):
+    id: UUID
+    contract_id: UUID
+    decision: Literal["approved", "rejected"]
+    reason: str | None = None
+    reviewed_by: str
+    reviewed_at: datetime
 
 
 class Hypothesis(BaseModel):

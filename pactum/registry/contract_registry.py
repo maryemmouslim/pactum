@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 from typing import Literal
+from uuid import UUID
 
 import psycopg
 
@@ -69,6 +70,54 @@ def create_version(
         return contract
 
 
+def activate_version(dataset_id: str, version: int) -> Contract:
+    """Promote a draft version to active, atomically deprecating whatever was active before.
+
+    Enforces the contract lifecycle: only a 'draft' version can be activated
+    (a version that's already 'active' or 'deprecated' cannot be re-activated),
+    and at most one version per dataset can be 'active' at a time. That
+    single-active invariant is guaranteed by a partial unique index
+    (contracts.dataset_id WHERE status = 'active') -- not just this
+    function's logic -- so it holds even under a concurrent bug elsewhere.
+    """
+    with _connect() as conn:
+        conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtext(%(dataset_id)s))",
+            {"dataset_id": dataset_id},
+        )
+
+        row = conn.execute(
+            """
+            SELECT id, dataset_id, version, yaml, status,
+                   parent_version_id, created_at, created_by
+            FROM contracts
+            WHERE dataset_id = %(dataset_id)s AND version = %(version)s
+            """,
+            {"dataset_id": dataset_id, "version": version},
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"No version {version} found for dataset '{dataset_id}'")
+
+        target = _row_to_contract(row)
+        if target.status != "draft":
+            raise ValueError(
+                f"Cannot activate version {version} of '{dataset_id}': "
+                f"status is '{target.status}', not 'draft'"
+            )
+
+        conn.execute(
+            "UPDATE contracts SET status = 'deprecated' "
+            "WHERE dataset_id = %(dataset_id)s AND status = 'active'",
+            {"dataset_id": dataset_id},
+        )
+        conn.execute(
+            "UPDATE contracts SET status = 'active' WHERE id = %(id)s",
+            {"id": target.id},
+        )
+
+        return target.model_copy(update={"status": "active"})
+
+
 def _row_to_contract(row: tuple[object, ...]) -> Contract:
     columns = [
         "id",
@@ -95,6 +144,20 @@ def get_active(dataset_id: str) -> Contract | None:
             LIMIT 1
             """,
             {"dataset_id": dataset_id},
+        ).fetchone()
+        return _row_to_contract(row) if row else None
+
+
+def get_by_id(contract_id: UUID) -> Contract | None:
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT id, dataset_id, version, yaml, status,
+                   parent_version_id, created_at, created_by
+            FROM contracts
+            WHERE id = %(id)s
+            """,
+            {"id": contract_id},
         ).fetchone()
         return _row_to_contract(row) if row else None
 

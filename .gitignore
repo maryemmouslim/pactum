@@ -29,6 +29,9 @@ htmlcov/
 data/
 pgdata/
 
+# Local ephemeral Dagster instance state
+.tmp_dagster_home*/
+
 # IDE
 .vscode/
 .idea/

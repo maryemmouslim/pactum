@@ -5,6 +5,7 @@ import psycopg
 import pytest
 
 from pactum.monitoring.incident_store import emit_incident
+from pactum.registry.contract_registry import create_version
 from pactum.settings import settings
 
 
@@ -25,9 +26,15 @@ def _cleanup(dataset_id: str):  # type: ignore[no-untyped-def]
         conn.execute(
             "DELETE FROM incidents WHERE dataset_id = %(dataset_id)s", {"dataset_id": dataset_id}
         )
+        conn.execute(
+            "DELETE FROM contracts WHERE dataset_id = %(dataset_id)s", {"dataset_id": dataset_id}
+        )
 
 
 def test_emit_incident_is_safe_under_concurrent_calls(dataset_id: str) -> None:
+    # contract_version_id is a real foreign key now -- emit_incident needs an
+    # actual contracts row to point at, not just any UUID.
+    contract = create_version(dataset_id=dataset_id, yaml="apiVersion: v3", created_by="test")
     # 10 threads all detect the "same" problem on the same column at once --
     # before the fix, this could insert 10 duplicate rows with the same
     # signature. The database's unique constraint plus the atomic upsert
@@ -44,7 +51,7 @@ def test_emit_incident_is_safe_under_concurrent_calls(dataset_id: str) -> None:
                 severity="high",
                 check_type="schema",
                 payload={"detail": "missing column"},
-                contract_version="1",
+                contract_version_id=contract.id,
                 column="amount",
             )
             with lock:

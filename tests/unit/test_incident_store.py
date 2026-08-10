@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 import pytest
 
 from pactum.models import Incident
-from pactum.monitoring.incident_store import build_signature, emit_incident
+from pactum.monitoring.incident_store import _json_safe, build_signature, emit_incident
 
 
 def test_build_signature_is_deterministic() -> None:
@@ -26,6 +26,27 @@ def test_build_signature_differs_by_check_type() -> None:
     sig_ks = build_signature("orders", "ks", "amount")
 
     assert sig_psi != sig_ks
+
+
+def test_json_safe_converts_infinities_to_strings() -> None:
+    assert _json_safe(float("inf")) == "inf"
+    assert _json_safe(float("-inf")) == "-inf"
+    assert _json_safe(float("nan")) == "nan"
+
+
+def test_json_safe_leaves_normal_floats_untouched() -> None:
+    assert _json_safe(3.14) == 3.14
+    assert _json_safe(0.0) == 0.0
+
+
+def test_json_safe_recurses_into_nested_dicts_and_lists() -> None:
+    # This is exactly the shape PSI produces: bin_edges containing +-inf,
+    # nested inside a details dict that becomes part of an incident payload.
+    payload = {"score": 6.6, "bin_edges": [float("-inf"), 1.0, 2.0, float("inf")]}
+
+    result = _json_safe(payload)
+
+    assert result == {"score": 6.6, "bin_edges": ["-inf", 1.0, 2.0, "inf"]}
 
 
 class FakeConnection:
@@ -65,8 +86,31 @@ class FakeConnection:
             params["severity"],
             params["signature"],
             raw_payload,
-            params["contract_version"],
+            params["contract_version_id"],
+            params["check_type"],
+            params["column_name"],
         )
+
+
+def test_emit_incident_sanitizes_infinite_values_in_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Reproduces the real bug: a PSI-shaped payload with +-inf in bin_edges
+    # used to crash psycopg's JSON encoding when actually written to Postgres.
+    fake_conn = FakeConnection(simulate_conflict=False)
+    monkeypatch.setattr("pactum.monitoring.incident_store._connect", lambda: fake_conn)
+
+    incident = emit_incident(
+        dataset_id="orders",
+        kind="drift",
+        severity="high",
+        check_type="psi",
+        payload={"score": 6.6, "bin_edges": [float("-inf"), 1.0, float("inf")]},
+        contract_version_id=uuid.uuid4(),
+        column="amount",
+    )
+
+    assert incident.payload["bin_edges"] == ["-inf", 1.0, "inf"]
 
 
 def test_emit_incident_creates_new_incident_when_none_exists(
@@ -81,7 +125,7 @@ def test_emit_incident_creates_new_incident_when_none_exists(
         severity="high",
         check_type="psi",
         payload={"score": 0.5},
-        contract_version="1",
+        contract_version_id=uuid.uuid4(),
         column="amount",
     )
 
@@ -109,7 +153,9 @@ def test_emit_incident_reuses_existing_incident_on_insert_conflict(
         severity="high",
         signature=build_signature("orders", "psi", "amount"),
         payload={},
-        contract_version="1",
+        contract_version_id=uuid.uuid4(),
+        check_type="psi",
+        column_name="amount",
     )
     monkeypatch.setattr(
         "pactum.monitoring.incident_store.find_open_incident", lambda signature: existing
@@ -121,7 +167,7 @@ def test_emit_incident_reuses_existing_incident_on_insert_conflict(
         severity="high",
         check_type="psi",
         payload={"score": 0.5},
-        contract_version="1",
+        contract_version_id=uuid.uuid4(),
         column="amount",
     )
 
@@ -147,6 +193,6 @@ def test_emit_incident_raises_if_conflict_but_no_row_found(
             severity="high",
             check_type="psi",
             payload={"score": 0.5},
-            contract_version="1",
+            contract_version_id=uuid.uuid4(),
             column="amount",
         )

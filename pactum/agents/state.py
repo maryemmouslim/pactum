@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from pactum.models import Contract
+from pactum.models import Contract, Explanation, Incident, RefinementProposal
 
 
 class ContractGeneratorState(BaseModel):
@@ -16,3 +16,11 @@ class ContractGeneratorState(BaseModel):
     critique_approved: bool | None = None
     critique_feedback: str | None = None
     written_contract: Contract | None = None
+
+
+class CausalExplainerState(BaseModel):
+    incident: Incident
+    findings: list[dict[str, object]] = Field(default_factory=list)
+    hypotheses: list[dict[str, object]] = Field(default_factory=list)
+    explanation: Explanation | None = None
+    refinement_proposal: RefinementProposal | None = None

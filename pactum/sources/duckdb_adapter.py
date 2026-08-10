@@ -1,10 +1,11 @@
+from datetime import datetime
 from pathlib import Path
 
 import duckdb
 
 
 class DuckDBAdapter:
-    """Reads CSV/Parquet files from a directory; each file is one dataset."""
+    """Reads CSV/Parquet/JSON files from a directory; each file is one dataset."""
 
     def __init__(self, directory: str):
         self._dir = Path(directory)
@@ -17,7 +18,7 @@ class DuckDBAdapter:
         return matches[0]
 
     def list_datasets(self) -> list[str]:
-        return [p.stem for p in self._dir.iterdir() if p.suffix in (".csv", ".parquet")]
+        return [p.stem for p in self._dir.iterdir() if p.suffix in (".csv", ".parquet", ".json")]
 
     def get_schema(self, dataset: str) -> dict[str, str]:
         path = self._path_for(dataset)
@@ -27,3 +28,16 @@ class DuckDBAdapter:
     def sample(self, dataset: str, n: int = 10) -> list[tuple[object, ...]]:
         path = self._path_for(dataset)
         return self._conn.execute(f"SELECT * FROM '{path}' LIMIT {n}").fetchall()
+
+    def to_registration_config(self) -> dict[str, object]:
+        return {"adapter_type": "duckdb", "directory": str(self._dir)}
+
+    def query_window(
+        self, dataset: str, timestamp_column: str, start: datetime, end: datetime
+    ) -> list[tuple[object, ...]]:
+        path = self._path_for(dataset)
+        return self._conn.execute(
+            f"SELECT * FROM '{path}' WHERE \"{timestamp_column}\" >= ? "
+            f'AND "{timestamp_column}" < ? ORDER BY "{timestamp_column}"',
+            [start, end],
+        ).fetchall()

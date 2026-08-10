@@ -16,6 +16,7 @@ from pactum.agents.contract_generator import (
     write_contract,
 )
 from pactum.agents.state import ContractGeneratorState
+from pactum.contract_schema import ColumnRule, ParsedContract, parse_contract_yaml
 from pactum.lineage.graph import LineageGraph
 from pactum.models import Contract
 from pactum.sources import registry as source_registry
@@ -39,17 +40,20 @@ class FakeLLM:
         return FakeStructuredLLM(self._result)
 
 
-class FakeMessage:
-    def __init__(self, content: str) -> None:
-        self.content = content
+class FakeContractStructuredLLM:
+    def __init__(self, result: ParsedContract) -> None:
+        self._result = result
+
+    def invoke(self, prompt: str) -> ParsedContract:
+        return self._result
 
 
-class FakeDraftLLM:
-    def __init__(self, content: str) -> None:
-        self._content = content
+class FakeContractLLM:
+    def __init__(self, result: ParsedContract) -> None:
+        self._result = result
 
-    def invoke(self, prompt: str) -> FakeMessage:
-        return FakeMessage(self._content)
+    def with_structured_output(self, schema: object) -> FakeContractStructuredLLM:
+        return FakeContractStructuredLLM(self._result)
 
 
 class FakeCritiqueStructuredLLM:
@@ -130,9 +134,17 @@ def test_classify_semantics_populates_state(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_draft_contract_populates_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_parsed = ParsedContract(
+        dataset_id="orders",
+        columns=[
+            ColumnRule(
+                name="order_id", data_type="TEXT", semantic_type="identifier", nullable=False
+            )
+        ],
+    )
     monkeypatch.setattr(
         "pactum.agents.contract_generator.get_llm",
-        lambda role="reasoning": FakeDraftLLM("apiVersion: v3\nkind: DataContract"),
+        lambda role="reasoning": FakeContractLLM(fake_parsed),
     )
 
     state = ContractGeneratorState(
@@ -144,7 +156,8 @@ def test_draft_contract_populates_state(monkeypatch: pytest.MonkeyPatch) -> None
 
     result = draft_contract(state)
 
-    assert result.draft_yaml == "apiVersion: v3\nkind: DataContract"
+    assert result.draft_yaml is not None
+    assert parse_contract_yaml(result.draft_yaml) == fake_parsed
 
 
 def test_build_draft_prompt_includes_feedback_after_rejection() -> None:
@@ -278,9 +291,17 @@ def test_full_graph_runs_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("pactum.agents.contract_generator.create_version", fake_create_version)
 
+    fake_parsed = ParsedContract(
+        dataset_id="orders",
+        columns=[
+            ColumnRule(
+                name="order_id", data_type="TEXT", semantic_type="identifier", nullable=False
+            )
+        ],
+    )
     draft_then_critique_llms = iter(
         [
-            FakeDraftLLM("apiVersion: v3\nkind: DataContract"),
+            FakeContractLLM(fake_parsed),
             FakeCritiqueLLM(CritiqueResult(approved=True, feedback="")),
         ]
     )
@@ -294,5 +315,5 @@ def test_full_graph_runs_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result["written_contract"].status == "draft"
     assert result["written_contract"].version == 1
-    assert result["draft_yaml"] == "apiVersion: v3\nkind: DataContract"
+    assert parse_contract_yaml(result["draft_yaml"]) == fake_parsed
     assert result["critique_approved"] is True

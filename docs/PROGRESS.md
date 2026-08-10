@@ -19,11 +19,11 @@ Tracks what's actually built vs. what's still planned. Update this after each ph
 
 ## Phase 1 — Foundation layer (complete)
 
-1. **Data models** (`pactum/models.py`) — `Contract`, `Incident`, `Hypothesis`, `Explanation`, `RefinementProposal`, `LineageEdge`. Verified: JSON round-trip, validation rejects out-of-range values.
-2. **Contract Registry** (`pactum/registry/contract_registry.py` + `migrations/versions/f822946a2735_*`) — Postgres-backed, append-only versioning. Functions: `create_version`, `get_active`, `get_version`, `list_history`. Verified end-to-end with real inserts/queries.
-3. **Source Adapters** (`pactum/sources/`) — `protocol.py` (shared interface: `list_datasets`, `get_schema`, `sample`), `duckdb_adapter.py` (CSV/Parquet files), `postgres_adapter.py` (DB tables). Verified both return the same shape of data.
-4. **Profiler** (`pactum/profiler.py`) — per-column stats (null %, distinct count, min/max) via whylogs. Verified against real CSV data.
-5. **Lineage graph** (`pactum/lineage/graph.py` + `migrations/versions/565c8114e4f5_*`) — NetworkX `DiGraph` wrapper + Postgres persistence (`lineage_edges` table). Verified: save → reload → `upstream_of`/`downstream_of` queries correct.
+1. **Data models** (`pactum/models.py`) — `Contract`, `Incident`, `Hypothesis`, `Explanation`, `RefinementProposal`, `LineageEdge`. Verified: `tests/unit/test_models.py` — JSON round-trip and out-of-range/invalid-literal rejection for every model.
+2. **Contract Registry** (`pactum/registry/contract_registry.py` + `migrations/versions/f822946a2735_*`) — Postgres-backed, append-only versioning, atomic version/parent allocation via a `pg_advisory_xact_lock`. Verified: `tests/integration/test_contract_registry.py`, including a real 10-thread concurrency test.
+3. **Source Adapters** (`pactum/sources/`) — `protocol.py`, `duckdb_adapter.py` (CSV/Parquet), `postgres_adapter.py` (DB tables), `registry.py`, `business_context.py`. Verified: `tests/unit/test_duckdb_adapter.py` (against real `examples/data/` CSVs), `tests/integration/test_postgres_adapter.py` (against a real Postgres table — previously had zero coverage of any kind), `tests/unit/test_source_registry.py`, `tests/unit/test_business_context.py`.
+4. **Profiler** (`pactum/profiler.py`) — per-column stats (null %, distinct count, min/max) via whylogs. Verified: `tests/unit/test_profiler.py`.
+5. **Lineage graph** (`pactum/lineage/graph.py` + `migrations/versions/565c8114e4f5_*`) — NetworkX `DiGraph` wrapper + Postgres persistence. Verified: `tests/integration/test_lineage_graph.py` — real `save_edge` → `load_graph` round-trip against Postgres (previously only the in-memory `LineageGraph` class was exercised, always empty).
 
 All test/throwaway data cleaned from Postgres (`contracts`, `lineage_edges` tables empty) and scratch files removed before commit.
 

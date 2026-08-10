@@ -10,7 +10,7 @@
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)]()
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)]()
 
-![Pactum demo](docs/assets/pactum-demo.gif)
+*(demo GIF coming with the v1.0 release)*
 
 </div>
 
@@ -99,8 +99,8 @@ report = explainer.investigate(monitor.latest_incident())
 print(report.render_markdown())
 ```
 
-Full walkthrough on the NYC Taxi dataset: [`examples/nyc_taxi`](./examples/nyc_taxi).
-Colab notebook (no install): [Open in Colab](#).
+Full walkthrough on the NYC Taxi dataset: coming soon.
+Colab notebook (no install): coming soon.
 
 ## How it works
 

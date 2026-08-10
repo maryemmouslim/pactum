@@ -40,16 +40,13 @@ uv run pre-commit install
 
 # Run tests
 uv run pytest
-
-# Run the demo pipeline
-uv run pactum demo nyc_taxi
 ```
 
 Requirements:
 
 - Python 3.11 or newer.
 - PostgreSQL 14+ for the contract registry. A local Postgres via Docker works: `docker compose up postgres`.
-- An Anthropic API key for the agents: `export ANTHROPIC_API_KEY=...`.
+- A Groq API key for the agents: `export GROQ_API_KEY=...`.
 
 ## Project layout
 
@@ -82,7 +79,7 @@ pactum/
 We use `pytest`. Two test tiers:
 
 - **Unit tests** in `tests/unit/` — fast, no external services.
-- **Integration tests** in `tests/integration/` — use a Postgres container and hit the Anthropic API. Require `ANTHROPIC_API_KEY`.
+- **Integration tests** in `tests/integration/` — use a real Postgres container (`docker compose up postgres`, then `uv run alembic upgrade head`). They don't currently call any LLM API.
 
 Run unit tests only:
 

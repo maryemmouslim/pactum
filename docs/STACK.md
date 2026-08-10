@@ -37,11 +37,11 @@ Alternative rejected: **SQLite** — no JSONB, weaker for concurrent writes.
 
 | Tool | Purpose | Why |
 |---|---|---|
-| **Anthropic SDK** | LLM client | Claude for the reasoning quality. `claude-opus-4-7` for complex causal reasoning, `claude-haiku-4-5` for cheap classification. |
+| **Groq (via `langchain-groq`)** | LLM client | Free tier, low latency. `llama-3.3-70b-versatile` for reasoning (drafting, self-critique), `llama-3.1-8b-instant` for cheap classification. |
 | **LangGraph** | Agent orchestration | Explicit state graphs. Handles parallel investigation (crucial for the causal agent). Not magic like LangChain. |
 | **Pydantic** | Structured LLM outputs | Contracts, incidents, explanations all validated. |
 
-Alternatives rejected: **LangChain** (too much implicit behavior, unstable API), **raw SDK** (too low-level for parallel state machines), **OpenAI** (fine but Claude wins on reasoning quality for this use case).
+Alternatives rejected: **LangChain** (too much implicit behavior, unstable API), **raw SDK** (too low-level for parallel state machines), **Gemini** (hit a free-tier quota=0 account issue, parked without further debugging), **Anthropic/OpenAI** (paid-only, avoided to keep this a free-tier-friendly POC).
 
 ## 5. Data profiling
 
@@ -151,7 +151,7 @@ Rough phasing so you do not need to know everything on day one:
 | Week | New tools to onboard |
 |---|---|
 | 1 | uv, Dagster basics, Postgres via Docker, ruff/mypy/pytest workflow. |
-| 2 | LangGraph fundamentals, Anthropic SDK, whylogs, ODCS spec. |
+| 2 | LangGraph fundamentals, Groq API via `langchain-groq`, whylogs, ODCS spec. |
 | 3-4 | scipy.stats (KS/Chi-squared), PSI implementation, Pydantic validation patterns. |
 | 5-6 | Streamlit basics, DuckDB for the profile cache. |
 | 7-8 | LanceDB, sentence-transformers, LangGraph parallel state pattern. |
@@ -164,11 +164,11 @@ For the full 12-week dev cycle:
 
 | Line item | Estimate |
 |---|---|
-| Anthropic API (contract gen + causal agent) | $50-$100 |
+| Groq API (contract gen + causal agent) | $0 (free tier) |
 | Postgres, Docker, all OSS | $0 |
 | GitHub (public repo) | $0 |
 | MkDocs hosting (GitHub Pages) | $0 |
-| **Total** | **< $150** |
+| **Total** | **$0** |
 
 The API cost breaks down roughly as: contract generator uses ~10k tokens per contract, so 100 contracts across dev ≈ $10. Causal agent uses ~30k tokens per incident due to parallel investigation, so 500 incidents across dev ≈ $75.
 

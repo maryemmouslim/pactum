@@ -2,8 +2,9 @@ from typing import cast
 
 from pydantic import BaseModel, Field
 
-from pactum.llm import get_llm
+from pactum.llm import get_llm, invoke_structured
 from pactum.tools import tool
+from pactum.tools.pii_heuristics import detect_pii
 
 
 class SemanticClassification(BaseModel):
@@ -33,6 +34,10 @@ def classify_semantic_type(
     Returns:
         Dict with "label" (semantic type) and "confidence" (0-1).
     """
+    pii_confidence = detect_pii(column_name, samples)
+    if pii_confidence is not None:
+        return SemanticClassification(label="pii", confidence=pii_confidence).model_dump()
+
     llm = get_llm("fast").with_structured_output(SemanticClassification)
     prompt = (
         f"Column name: {column_name}\n"
@@ -42,5 +47,5 @@ def classify_semantic_type(
         "Classify what this column semantically represents. Choose one label: "
         "pii, currency, timestamp, identifier, categorical, free_text, or other."
     )
-    result = cast(SemanticClassification, llm.invoke(prompt))
+    result = cast(SemanticClassification, invoke_structured(llm, prompt))
     return result.model_dump()
