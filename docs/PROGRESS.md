@@ -38,23 +38,33 @@ All test/throwaway data cleaned from Postgres (`contracts`, `lineage_edges` tabl
 **Track B — Monitoring layer** (`pactum/monitoring/`)
 - Statistical drift (`monitoring/drift/`): PSI, KS (`scipy.stats.ks_2samp`), Chi-squared (`scipy.stats.chi2_contingency`), freshness delta — all registered in `drift/registry.py`
 - Contract adherence checks (`monitoring/adherence/`): schema, range, enum, regex, freshness SLA, completeness SLA, referential integrity, uniqueness — each a standalone function returning a shared `Violation` shape
-- Incident emission (`monitoring/incident_store.py`): `emit_incident` + `build_signature` for deduplication, backed by a new `incidents` table (`migrations/versions/41b5ea924013_*`, **not yet applied** — Docker wasn't running when built; run `docker compose up postgres` then `uv run alembic upgrade head`)
-- Dagster integration (`pactum/orchestration/definitions.py`): `source_data` and `contract` assets; all 8 adherence checks wired as asset checks (schema, uniqueness, completeness, range, enum, regex, freshness SLA, referential integrity), each emitting an incident on failure; hourly `ScheduleDefinition`
-- **Known gap**: the 4 drift detectors (PSI, KS, Chi-squared, freshness delta) are built and tested but *not* wired into Dagster — they need a reference-window store (per `DESIGN.md`, "14 days before contract went active") that doesn't exist yet. Wiring them now would mean faking historical data, so this is left as an explicit follow-up rather than done dishonestly.
-- Also still owed: register a real source (nothing calls `register_source` outside tests), and the schedule needs to be manually enabled in the Dagster UI once running.
+- Incident emission (`monitoring/incident_store.py`): `emit_incident` + `build_signature` for deduplication, backed by an `incidents` table (`migrations/versions/41b5ea924013_*`, applied)
+- Dagster integration (`pactum/orchestration/definitions.py`): `source_data` and `contract` assets, plus `capture_snapshots`; adherence *and* drift checks both run generically off the contract's own rules via `monitoring/runner.py`'s `evaluate_contract` (drift detectors ended up wired in once `snapshot_store.py`'s reference-window store existed); hourly `ScheduleDefinition`s for monitoring and daily snapshots, both `DefaultScheduleStatus.RUNNING`
+- The example "orders"/"customers" sources are registered at import time in `definitions.py` so the module is self-contained under `dagster dev`
 
 65 unit tests passing (`tests/unit/`), clean `ruff format`/`ruff check`/`mypy --strict`. Added dependencies: `langgraph`, `scipy` (+ `scipy-stubs` dev), `dagster`.
 
 Target per original roadmap: v0.1.0.
 
-## Phase 3 — Causal Explanation Agent (not started)
+## Phase 3 — Causal Explanation Agent (complete)
 
-- 7 investigation tools: `get_lineage`, `fetch_pipeline_logs`, `diff_schema`, `compare_distributions`, `fetch_calendar_events`, `find_similar_incidents` (LanceDB + sentence-transformers), `query_contract_context`
-- LangGraph state machine: classify → parallel investigation (6 branches) → merge → synthesize hypotheses → rank by confidence → propose action → propose refinement
-- `RefinementQueue` + Streamlit review UI
-- Dagster sensor triggering investigation on new incidents
+**Agent** (`pactum/agents/causal_explainer.py`, `pactum/tools/causal_tools.py`) — a deliberately simplified 4-node LangGraph, not the original design's literal 8-node parallel fan-out: `investigate_incident` (calls all 7 tools) → `synthesize_hypotheses` (LLM call via `get_llm("reasoning").with_structured_output`, grounded in real tool findings, not hardcoded string matching) → `persist_explanation` → conditionally `propose_refinement` when the top hypothesis implies the contract itself is wrong. Same investigative behavior as the original design, far less code, easier to test.
 
-Target: v0.2.0.
+All 7 investigation tools are real, not stubs:
+- `get_lineage`, `diff_schema`, `compare_distributions`, `query_contract_context` — reuse existing lineage/contract/drift-detector code
+- `find_similar_incidents` — real vector search (`pactum/monitoring/incident_index.py`, LanceDB + sentence-transformers `all-MiniLM-L6-v2`). Every investigated incident is embedded and indexed right after its `Explanation` is persisted. Verified it ranks semantically related incidents above unrelated ones, not just exact `(dataset_id, check_type)` matches.
+- `fetch_pipeline_logs` — queries a *persistent* `DagsterInstance` (switched from `DagsterInstance.ephemeral()`; `DAGSTER_HOME` now points at `.dagster_home/`) for real, dataset-tagged `monitoring_job` run history. Only runs that went through Dagster are visible — ad-hoc "Run checks" clicks in the UI call `evaluate_contract` directly and never create a Dagster run.
+- `fetch_calendar_events` — new `calendar_events` table + `pactum/monitoring/calendar_store.py`, populated manually via `pactum/scripts/add_calendar_event.py` (no external calendar source exists to integrate with).
+
+**Feedback loop**: `RefinementProposal`s are persisted (`pactum/monitoring/refinement_store.py`) and reviewable in the Streamlit UI's "Pending refinement proposals" section — accepting one calls `create_version` + `activate_version` against the Contract Registry; rejecting requires a reason. A new "7. Investigated incidents" section shows every investigated incident's ranked hypotheses and full reasoning trace per dataset.
+
+**Automatic triggering**: `pactum/orchestration/causal_sensor.py`'s `new_incident_sensor` polls `list_incidents_since` on a cursor and fires `causal_investigation_job` per new incident (deduped via `run_key`), `default_status=DefaultSensorStatus.RUNNING` so it starts automatically under `dagster dev` — confirmed live in the daemon log.
+
+`Incident` gained `check_type`/`column_name` fields (previously computed by checks and discarded) since the investigation tools need them. New dependencies: `lancedb`, `sentence-transformers` — the latter pulls in `torch`, which noticeably slows `uv sync`/CI install and first-test-run time; accepted tradeoff for real embedding-based retrieval instead of another exact-match SQL lookup.
+
+249 tests passing (up from 65 at the end of Phase 2), clean `ruff format`/`ruff check`/`mypy --strict`.
+
+Target per original roadmap: v0.2.0 — reached.
 
 ## Phase 4 — Polish, eval, release (not started)
 
