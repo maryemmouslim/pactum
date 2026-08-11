@@ -57,12 +57,14 @@ def test_investigate_incident_collects_findings_from_every_applicable_tool(
 ) -> None:
     monkeypatch.setattr("pactum.tools.causal_tools.load_graph", lambda: LineageGraph())
     monkeypatch.setattr("pactum.tools.causal_tools.get_by_id", lambda contract_id: None)
-    monkeypatch.setattr(
-        "pactum.tools.causal_tools.find_related_incidents",
-        lambda dataset_id, check_type, exclude_id: [],
-    )
+    monkeypatch.setattr("pactum.tools.causal_tools.get_incident", lambda incident_id: None)
     monkeypatch.setattr(
         "pactum.tools.causal_tools.load_reference_snapshot", lambda dataset_id, column: None
+    )
+    monkeypatch.setattr("pactum.tools.causal_tools.list_events_near", lambda dataset_id, around: [])
+    monkeypatch.setattr(
+        "pactum.tools.causal_tools.fetch_recent_runs",
+        lambda dataset_id, around: {"status": "not_configured", "logs": []},
     )
 
     state = CausalExplainerState(incident=_make_incident(check_type="psi", column_name="amount"))
@@ -85,9 +87,11 @@ def test_investigate_incident_skips_distribution_compare_without_a_column(
 ) -> None:
     monkeypatch.setattr("pactum.tools.causal_tools.load_graph", lambda: LineageGraph())
     monkeypatch.setattr("pactum.tools.causal_tools.get_by_id", lambda contract_id: None)
+    monkeypatch.setattr("pactum.tools.causal_tools.get_incident", lambda incident_id: None)
+    monkeypatch.setattr("pactum.tools.causal_tools.list_events_near", lambda dataset_id, around: [])
     monkeypatch.setattr(
-        "pactum.tools.causal_tools.find_related_incidents",
-        lambda dataset_id, check_type, exclude_id: [],
+        "pactum.tools.causal_tools.fetch_recent_runs",
+        lambda dataset_id, around: {"status": "not_configured", "logs": []},
     )
 
     state = CausalExplainerState(incident=_make_incident(check_type="schema", column_name=None))
@@ -152,6 +156,9 @@ def test_persist_explanation_builds_and_saves_explanation(
         return explanation
 
     monkeypatch.setattr("pactum.agents.causal_explainer.save_explanation", fake_save_explanation)
+    monkeypatch.setattr(
+        "pactum.agents.causal_explainer.index_incident", lambda incident, explanation: None
+    )
 
     incident = _make_incident()
     state = CausalExplainerState(
@@ -228,9 +235,11 @@ def test_full_graph_runs_end_to_end_and_proposes_a_refinement(
     monkeypatch.setattr("pactum.tools.causal_tools.load_graph", lambda: LineageGraph())
     monkeypatch.setattr("pactum.tools.causal_tools.get_by_id", lambda contract_id: None)
     monkeypatch.setattr("pactum.agents.causal_explainer.get_by_id", lambda contract_id: None)
+    monkeypatch.setattr("pactum.tools.causal_tools.get_incident", lambda incident_id: None)
+    monkeypatch.setattr("pactum.tools.causal_tools.list_events_near", lambda dataset_id, around: [])
     monkeypatch.setattr(
-        "pactum.tools.causal_tools.find_related_incidents",
-        lambda dataset_id, check_type, exclude_id: [],
+        "pactum.tools.causal_tools.fetch_recent_runs",
+        lambda dataset_id, around: {"status": "not_configured", "logs": []},
     )
 
     fake_hypotheses = _HypothesisList(
@@ -254,6 +263,9 @@ def test_full_graph_runs_end_to_end_and_proposes_a_refinement(
         "pactum.agents.causal_explainer.save_refinement_proposal",
         lambda proposal: saved_refinements.append(proposal) or proposal,
     )
+    monkeypatch.setattr(
+        "pactum.agents.causal_explainer.index_incident", lambda incident, explanation: None
+    )
 
     incident = _make_incident(check_type="schema", column_name=None)
     app = build_causal_explainer_graph()
@@ -276,9 +288,11 @@ def test_full_graph_omits_refinement_proposal_key_when_routed_to_end(
     # present-with-None. Callers must use result.get(...), never result[...].
     monkeypatch.setattr("pactum.tools.causal_tools.load_graph", lambda: LineageGraph())
     monkeypatch.setattr("pactum.tools.causal_tools.get_by_id", lambda contract_id: None)
+    monkeypatch.setattr("pactum.tools.causal_tools.get_incident", lambda incident_id: None)
+    monkeypatch.setattr("pactum.tools.causal_tools.list_events_near", lambda dataset_id, around: [])
     monkeypatch.setattr(
-        "pactum.tools.causal_tools.find_related_incidents",
-        lambda dataset_id, check_type, exclude_id: [],
+        "pactum.tools.causal_tools.fetch_recent_runs",
+        lambda dataset_id, around: {"status": "not_configured", "logs": []},
     )
 
     fake_hypotheses = _HypothesisList(
@@ -289,6 +303,9 @@ def test_full_graph_omits_refinement_proposal_key_when_routed_to_end(
     )
     monkeypatch.setattr(
         "pactum.agents.causal_explainer.save_explanation", lambda explanation: explanation
+    )
+    monkeypatch.setattr(
+        "pactum.agents.causal_explainer.index_incident", lambda incident, explanation: None
     )
 
     incident = _make_incident(check_type="schema", column_name=None)

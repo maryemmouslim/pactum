@@ -31,6 +31,10 @@ pgdata/
 
 # Local ephemeral Dagster instance state
 .tmp_dagster_home*/
+.dagster_home/
+
+# Local vector index
+.lancedb/
 
 # IDE
 .vscode/

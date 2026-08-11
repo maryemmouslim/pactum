@@ -10,6 +10,7 @@ from pactum.agents.state import CausalExplainerState
 from pactum.llm import get_llm, invoke_structured
 from pactum.models import Explanation, Hypothesis, RefinementProposal
 from pactum.monitoring.explanation_store import save_explanation
+from pactum.monitoring.incident_index import index_incident
 from pactum.monitoring.refinement_store import save_refinement_proposal
 from pactum.registry.contract_registry import get_by_id
 from pactum.tools.causal_tools import (
@@ -62,21 +63,19 @@ def investigate_incident(state: CausalExplainerState) -> CausalExplainerState:
         },
         {
             "tool": "similar_incidents",
-            "result": find_similar_incidents.invoke(
-                {
-                    "dataset_id": incident.dataset_id,
-                    "check_type": incident.check_type,
-                    "incident_id": str(incident.id),
-                }
-            ),
+            "result": find_similar_incidents.invoke({"incident_id": str(incident.id)}),
         },
         {
             "tool": "pipeline_logs",
-            "result": fetch_pipeline_logs.invoke({"dataset_id": incident.dataset_id}),
+            "result": fetch_pipeline_logs.invoke(
+                {"dataset_id": incident.dataset_id, "around": incident.detected_at.isoformat()}
+            ),
         },
         {
             "tool": "calendar_events",
-            "result": fetch_calendar_events.invoke({"dataset_id": incident.dataset_id}),
+            "result": fetch_calendar_events.invoke(
+                {"dataset_id": incident.dataset_id, "around": incident.detected_at.isoformat()}
+            ),
         },
     ]
 
@@ -137,6 +136,7 @@ def persist_explanation(state: CausalExplainerState) -> CausalExplainerState:
         created_at=datetime.now(UTC),
     )
     saved = save_explanation(explanation)
+    index_incident(state.incident, saved)
     return state.model_copy(update={"explanation": saved})
 
 

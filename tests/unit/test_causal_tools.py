@@ -5,7 +5,7 @@ import pytest
 
 from pactum.contract_schema import ColumnRule, ParsedContract, render_contract_yaml
 from pactum.lineage.graph import LineageGraph
-from pactum.models import Contract, Incident
+from pactum.models import CalendarEvent, Contract, Incident
 from pactum.monitoring.drift.protocol import DriftResult
 from pactum.tools.causal_tools import (
     compare_distributions,
@@ -204,36 +204,98 @@ def test_query_contract_context_returns_column_rule_when_column_given(
     assert result["column_rule"]["max_value"] == 1000.0
 
 
-def test_find_similar_incidents_returns_related_incidents_as_dicts(
+def test_find_similar_incidents_returns_empty_for_unknown_incident(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    related = _make_incident(check_type="psi", column_name="amount")
+    monkeypatch.setattr("pactum.tools.causal_tools.get_incident", lambda incident_id: None)
+
+    result = find_similar_incidents.invoke({"incident_id": str(uuid.uuid4())})
+
+    assert result == []
+
+
+def test_find_similar_incidents_hydrates_vector_matches_with_similarity_score(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queried = _make_incident(check_type="psi", column_name="amount")
+    related = _make_incident(check_type="uniqueness", column_name="order_id")
+
+    def fake_get_incident(incident_id: uuid.UUID) -> Incident | None:
+        if incident_id == queried.id:
+            return queried
+        if incident_id == related.id:
+            return related
+        return None
+
+    monkeypatch.setattr("pactum.tools.causal_tools.get_incident", fake_get_incident)
     monkeypatch.setattr(
-        "pactum.tools.causal_tools.find_related_incidents",
-        lambda dataset_id, check_type, exclude_id: [related],
+        "pactum.tools.causal_tools.find_similar",
+        lambda incident: [{"id": str(related.id), "_distance": 0.12}],
     )
 
-    result = find_similar_incidents.invoke(
-        {
-            "dataset_id": "orders",
-            "check_type": "psi",
-            "incident_id": str(uuid.uuid4()),
-        }
-    )
+    result = find_similar_incidents.invoke({"incident_id": str(queried.id)})
 
     assert len(result) == 1
     assert result[0]["id"] == str(related.id)
-    assert result[0]["check_type"] == "psi"
+    assert result[0]["check_type"] == "uniqueness"
+    assert result[0]["similarity_score"] == 0.12
 
 
-def test_fetch_pipeline_logs_is_honest_about_no_backend_configured() -> None:
-    result = fetch_pipeline_logs.invoke({"dataset_id": "orders"})
+def test_fetch_pipeline_logs_returns_run_records_near_the_given_timestamp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "pactum.tools.causal_tools.fetch_recent_runs",
+        lambda dataset_id, around: {
+            "status": "ok",
+            "logs": [{"run_id": "abc", "status": "SUCCESS", "start_time": 1.0, "end_time": 2.0}],
+        },
+    )
+
+    result = fetch_pipeline_logs.invoke(
+        {"dataset_id": "orders", "around": "2026-08-10T12:00:00+00:00"}
+    )
+
+    assert result["status"] == "ok"
+    assert result["logs"][0]["run_id"] == "abc"
+
+
+def test_fetch_pipeline_logs_is_honest_when_no_instance_is_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "pactum.tools.causal_tools.fetch_recent_runs",
+        lambda dataset_id, around: {"status": "not_configured", "logs": []},
+    )
+
+    result = fetch_pipeline_logs.invoke(
+        {"dataset_id": "orders", "around": "2026-08-10T12:00:00+00:00"}
+    )
+
     assert result == {"status": "not_configured", "logs": []}
 
 
-def test_fetch_calendar_events_is_honest_about_no_backend_configured() -> None:
-    result = fetch_calendar_events.invoke({"dataset_id": "orders"})
-    assert result == {"status": "not_configured", "events": []}
+def test_fetch_calendar_events_returns_events_near_the_given_timestamp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event = CalendarEvent(
+        id=uuid.uuid4(),
+        dataset_id="orders",
+        event_type="deployment",
+        description="Shipped new ingestion pipeline",
+        event_at=datetime(2026, 8, 10, tzinfo=UTC),
+        created_at=datetime(2026, 8, 9, tzinfo=UTC),
+    )
+    monkeypatch.setattr(
+        "pactum.tools.causal_tools.list_events_near", lambda dataset_id, around: [event]
+    )
+
+    result = fetch_calendar_events.invoke(
+        {"dataset_id": "orders", "around": "2026-08-10T12:00:00+00:00"}
+    )
+
+    assert result["status"] == "ok"
+    assert result["events"][0]["description"] == "Shipped new ingestion pipeline"
 
 
 def test_no_tool_touches_a_real_database_connection(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -260,16 +322,17 @@ def test_no_tool_touches_a_real_database_connection(monkeypatch: pytest.MonkeyPa
     )
     compare_distributions.invoke({"dataset_id": "orders", "column": "amount"})
 
-    monkeypatch.setattr(
-        "pactum.tools.causal_tools.find_related_incidents",
-        lambda dataset_id, check_type, exclude_id: [],
-    )
-    find_similar_incidents.invoke(
-        {"dataset_id": "orders", "check_type": "psi", "incident_id": str(uuid.uuid4())}
-    )
+    monkeypatch.setattr("pactum.tools.causal_tools.get_incident", lambda incident_id: None)
+    find_similar_incidents.invoke({"incident_id": str(uuid.uuid4())})
 
-    fetch_pipeline_logs.invoke({"dataset_id": "orders"})
-    fetch_calendar_events.invoke({"dataset_id": "orders"})
+    monkeypatch.setattr(
+        "pactum.tools.causal_tools.fetch_recent_runs",
+        lambda dataset_id, around: {"status": "not_configured", "logs": []},
+    )
+    fetch_pipeline_logs.invoke({"dataset_id": "orders", "around": "2026-08-10T12:00:00+00:00"})
+
+    monkeypatch.setattr("pactum.tools.causal_tools.list_events_near", lambda dataset_id, around: [])
+    fetch_calendar_events.invoke({"dataset_id": "orders", "around": "2026-08-10T12:00:00+00:00"})
 
 
 def test_drift_result_model_dump_matches_expected_shape() -> None:

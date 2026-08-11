@@ -15,6 +15,7 @@ from pactum.agents.state import ContractGeneratorState
 from pactum.contract_schema import parse_contract_yaml
 from pactum.monitoring.runner import evaluate_contract
 from pactum.monitoring.snapshot_store import save_reference_snapshot
+from pactum.orchestration.causal_sensor import new_incident_sensor
 from pactum.registry.contract_registry import get_active
 from pactum.sources.duckdb_adapter import DuckDBAdapter
 from pactum.sources.registry import get_adapter, list_registered_datasets, register_source
@@ -146,4 +147,5 @@ defs = Definitions(
     assets=[source_data, contract, capture_snapshots],
     asset_checks=[contract_checks],
     schedules=[hourly_monitoring_schedule, daily_snapshot_schedule],
+    sensors=[new_incident_sensor],
 )

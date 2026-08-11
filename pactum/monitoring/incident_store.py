@@ -107,6 +107,41 @@ def find_related_incidents(
         return [_row_to_incident(row) for row in rows]
 
 
+def list_incidents_since(since: datetime | None, *, limit: int = 50) -> list[Incident]:
+    """Return incidents detected after `since`, oldest first (for cursor-based polling).
+
+    Used by the causal explainer's Dagster sensor to pick up new incidents
+    without reprocessing ones it's already seen. `since=None` returns the
+    most recent incidents overall (used only for one-off inspection, not by
+    the sensor itself -- it always has a cursor after its first tick).
+    """
+    with _connect() as conn:
+        if since is None:
+            rows = conn.execute(
+                """
+                SELECT id, dataset_id, detected_at, kind, severity, signature, payload,
+                       contract_version_id, check_type, column_name
+                FROM incidents
+                ORDER BY detected_at ASC
+                LIMIT %(limit)s
+                """,
+                {"limit": limit},
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, dataset_id, detected_at, kind, severity, signature, payload,
+                       contract_version_id, check_type, column_name
+                FROM incidents
+                WHERE detected_at > %(since)s
+                ORDER BY detected_at ASC
+                LIMIT %(limit)s
+                """,
+                {"since": since, "limit": limit},
+            ).fetchall()
+        return [_row_to_incident(row) for row in rows]
+
+
 def emit_incident(
     dataset_id: str,
     kind: Literal["drift", "violation"],

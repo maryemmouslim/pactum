@@ -60,9 +60,21 @@ class RefinementProposal(BaseModel):
     kind: Literal["relaxation", "tightening", "new_rule", "scoping"]
     proposed_yaml: str
     status: Literal["pending", "accepted", "rejected"]
+    reason: str | None = None
     created_at: datetime
 
 
 class LineageEdge(BaseModel):
     upstream_dataset_id: str
     downstream_dataset_id: str
+
+
+class CalendarEvent(BaseModel):
+    id: UUID
+    dataset_id: str | None = Field(
+        default=None, description="Dataset this event is scoped to; null applies to all datasets."
+    )
+    event_type: Literal["deployment", "holiday", "regulatory", "other"]
+    description: str
+    event_at: datetime
+    created_at: datetime

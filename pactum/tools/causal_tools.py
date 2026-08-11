@@ -1,11 +1,15 @@
+from datetime import datetime
 from uuid import UUID
 
 from pactum.contract_schema import parse_contract_yaml
 from pactum.lineage.graph import load_graph
+from pactum.monitoring.calendar_store import list_events_near
 from pactum.monitoring.drift.chi_squared import ChiSquaredDetector
 from pactum.monitoring.drift.ks import KSDetector
 from pactum.monitoring.drift.psi import PSIDetector
-from pactum.monitoring.incident_store import find_related_incidents
+from pactum.monitoring.incident_index import find_similar
+from pactum.monitoring.incident_store import get_incident
+from pactum.monitoring.pipeline_logs import fetch_recent_runs
 from pactum.monitoring.snapshot_store import load_reference_snapshot
 from pactum.registry.contract_registry import get_by_id
 from pactum.sources.registry import get_adapter
@@ -135,51 +139,68 @@ def query_contract_context(
 
 
 @tool
-def find_similar_incidents(
-    dataset_id: str, check_type: str, incident_id: str
-) -> list[dict[str, object]]:
-    """Return past incidents on this dataset with the same check type, most recent first.
+def find_similar_incidents(incident_id: str) -> list[dict[str, object]]:
+    """Return past incidents most semantically similar to this one, ranked by similarity.
+
+    Vector search over every incident's (check_type, column, payload, and
+    prior hypotheses) embedding -- not just an exact (dataset_id, check_type)
+    match, so it can surface real precedent across different check types
+    that turned out to share a root cause.
 
     Args:
-        dataset_id: Fully-qualified dataset identifier.
-        check_type: The check/drift-metric name that fired (e.g. "psi", "uniqueness").
-        incident_id: UUID (as a string) of the incident being investigated,
-            excluded from the results.
+        incident_id: UUID (as a string) of the incident being investigated.
 
     Returns:
-        Up to 5 prior incidents matching (dataset_id, check_type).
+        Empty list if the incident doesn't exist. Otherwise up to 5 similar
+        past incidents, each with an added "similarity_score" (lower = closer).
     """
-    related = find_related_incidents(dataset_id, check_type, UUID(incident_id))
-    return [incident.model_dump(mode="json") for incident in related]
+    incident = get_incident(UUID(incident_id))
+    if incident is None:
+        return []
+
+    results = []
+    for match in find_similar(incident):
+        related = get_incident(UUID(str(match["id"])))
+        if related is not None:
+            results.append(
+                {**related.model_dump(mode="json"), "similarity_score": match.get("_distance")}
+            )
+    return results
 
 
 @tool
-def fetch_pipeline_logs(dataset_id: str) -> dict[str, object]:
-    """Return recent pipeline execution logs for a dataset.
+def fetch_pipeline_logs(dataset_id: str, around: str) -> dict[str, object]:
+    """Return recent Dagster monitoring_job run records for a dataset.
 
-    No log backend is wired up in this project yet, so this honestly reports
-    that instead of fabricating log lines.
+    Only runs that actually went through Dagster are visible here -- an
+    ad-hoc "Run checks" click in the UI calls evaluate_contract directly and
+    never creates a Dagster run. status="not_configured" if no persistent
+    Dagster instance exists yet (e.g. run_monitoring_job.py has never run).
 
     Args:
         dataset_id: Fully-qualified dataset identifier.
+        around: ISO timestamp to search near (typically the incident's detected_at).
 
     Returns:
-        status="not_configured" with an empty logs list.
+        status="ok" with recent run records, or status="not_configured".
     """
-    return {"status": "not_configured", "logs": []}
+    return fetch_recent_runs(dataset_id, datetime.fromisoformat(around))
 
 
 @tool
-def fetch_calendar_events(dataset_id: str) -> dict[str, object]:
-    """Return deployments, holidays, or regulatory events near an incident.
+def fetch_calendar_events(dataset_id: str, around: str) -> dict[str, object]:
+    """Return deployments, holidays, or regulatory events near an incident's detection time.
 
-    No calendar source is wired up in this project yet, so this honestly
-    reports that instead of fabricating events.
+    There's no external calendar integration -- events are manually recorded
+    (see pactum/scripts/add_calendar_event.py) via pactum.monitoring.calendar_store.
 
     Args:
         dataset_id: Fully-qualified dataset identifier.
+        around: ISO timestamp to search near (typically the incident's detected_at).
 
     Returns:
-        status="not_configured" with an empty events list.
+        status="ok" with events within a few days of `around`, scoped to this
+        dataset or global.
     """
-    return {"status": "not_configured", "events": []}
+    events = list_events_near(dataset_id, datetime.fromisoformat(around))
+    return {"status": "ok", "events": [event.model_dump(mode="json") for event in events]}

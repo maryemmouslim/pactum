@@ -4,7 +4,7 @@ from uuid import UUID
 import psycopg
 import psycopg.types.json
 
-from pactum.models import Explanation, Hypothesis
+from pactum.models import Explanation
 from pactum.settings import settings
 
 
@@ -62,13 +62,30 @@ def get_explanations_for_incident(incident_id: UUID) -> list[Explanation]:
             """,
             {"incident_id": incident_id},
         ).fetchall()
-    return [
-        Explanation(
-            id=row[0],
-            incident_id=row[1],
-            hypotheses=[Hypothesis.model_validate(h) for h in row[2]],
-            reasoning_trace=row[3],
-            created_at=row[4],
-        )
-        for row in rows
-    ]
+    return [_row_to_explanation(row) for row in rows]
+
+
+def list_explanations_for_dataset(dataset_id: str, *, limit: int = 20) -> list[Explanation]:
+    """Return the most recent explanations for any incident on this dataset.
+
+    Joins against incidents (explanations don't carry dataset_id themselves)
+    -- used by the UI's "investigated incidents" viewer.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT e.id, e.incident_id, e.hypotheses, e.reasoning_trace, e.created_at
+            FROM explanations e
+            JOIN incidents i ON i.id = e.incident_id
+            WHERE i.dataset_id = %(dataset_id)s
+            ORDER BY e.created_at DESC
+            LIMIT %(limit)s
+            """,
+            {"dataset_id": dataset_id, "limit": limit},
+        ).fetchall()
+    return [_row_to_explanation(row) for row in rows]
+
+
+def _row_to_explanation(row: tuple[object, ...]) -> Explanation:
+    columns = ["id", "incident_id", "hypotheses", "reasoning_trace", "created_at"]
+    return Explanation.model_validate(dict(zip(columns, row, strict=True)))
