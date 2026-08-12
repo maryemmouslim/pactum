@@ -1,0 +1,76 @@
+dataset_id: orders
+columns:
+  - name: order_id
+    data_type: VARCHAR
+    semantic_type: identifier
+    sensitivity: false
+    nullable: false
+    unique: true
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: amount
+    data_type: DOUBLE
+    semantic_type: currency
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: 0.0
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: status
+    data_type: VARCHAR
+    semantic_type: categorical
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: ["pending", "shipped", "cancelled"]
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: email
+    data_type: VARCHAR
+    semantic_type: pii
+    sensitivity: true
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: "[^@\\s]+@[^@\\s]+\\.[^@\\s]+"
+    references_dataset: null
+    references_column: null
+  - name: created_at
+    data_type: TIMESTAMP WITH TIME ZONE
+    semantic_type: timestamp
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: customer_id
+    data_type: VARCHAR
+    semantic_type: identifier
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: customers
+    references_column: id
+freshness_sla_seconds: null
+completeness_sla: null

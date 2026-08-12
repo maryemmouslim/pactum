@@ -23,7 +23,6 @@ from pactum.tools.causal_tools import (
     query_contract_context,
 )
 
-_CONTRACT_ISSUE_KEYWORDS = ("contract", "rule", "sla", "constraint")
 _REFINEMENT_CONFIDENCE_THRESHOLD = 0.5
 
 
@@ -234,14 +233,18 @@ def _build_refinement_prompt(state: CausalExplainerState, current_contract_yaml:
         f"An incident on dataset '{incident.dataset_id}' (check_type={incident.check_type}, "
         f"column={incident.column_name}) was most likely caused by:\n"
         f"{top_hypothesis.get('description', '')}\n\n"
+        f"The specific evidence that conclusion is grounded in (not just the "
+        f"description above -- base your fix on this directly):\n"
+        f"{top_hypothesis.get('cited_evidence', '')}\n\n"
         f"Here is the exact current contract YAML for this dataset:\n\n"
         f"{current_contract_yaml}\n\n"
-        "Propose a specific refinement to prevent this from recurring: choose one kind "
-        "(relaxation, tightening, new_rule, scoping), then write the FULL revised "
-        "contract YAML -- copy the structure above exactly (same top-level keys: "
-        "dataset_id, columns, freshness_sla_seconds, completeness_sla; same fields per "
-        "column) and change only the specific value(s) that address the cause above. "
-        "Do not invent new top-level keys and do not drop any existing column."
+        "Propose a specific refinement to prevent this from recurring, grounded in the "
+        "evidence above: choose one kind (relaxation, tightening, new_rule, scoping), "
+        "then write the FULL revised contract YAML -- copy the structure above exactly "
+        "(same top-level keys: dataset_id, columns, freshness_sla_seconds, "
+        "completeness_sla; same fields per column) and change only the specific "
+        "value(s) that the evidence actually justifies changing. Do not invent new "
+        "top-level keys and do not drop any existing column."
     )
 
 

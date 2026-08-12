@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 import pytest
 
 from pactum.agents.causal_explainer import (
+    _build_refinement_prompt,
     _build_synthesis_prompt,
     _HypothesisDraft,
     _HypothesisList,
@@ -183,10 +184,16 @@ def test_synthesize_hypotheses_sorts_by_confidence_descending(
     fake_result = _HypothesisList(
         hypotheses=[
             _HypothesisDraft(
-                cited_evidence="evidence A", description="low confidence cause", confidence=0.2
+                cited_evidence="evidence A",
+                description="low confidence cause",
+                confidence=0.2,
+                implies_contract_issue=False,
             ),
             _HypothesisDraft(
-                cited_evidence="evidence B", description="high confidence cause", confidence=0.9
+                cited_evidence="evidence B",
+                description="high confidence cause",
+                confidence=0.9,
+                implies_contract_issue=False,
             ),
         ]
     )
@@ -233,17 +240,25 @@ def test_persist_explanation_builds_and_saves_explanation(
 
 
 @pytest.mark.parametrize(
-    ("description", "confidence", "expected"),
+    ("implies_contract_issue", "confidence", "expected"),
     [
-        ("A schema change or contract mismatch is the likely cause", 0.7, "propose_refinement"),
-        ("A schema change or contract mismatch is the likely cause", 0.3, "end"),
-        ("An upstream job silently failed to run", 0.9, "end"),
+        (True, 0.7, "propose_refinement"),
+        (True, 0.3, "end"),
+        (False, 0.9, "end"),
     ],
 )
-def test_route_after_explanation(description: str, confidence: float, expected: str) -> None:
+def test_route_after_explanation(
+    implies_contract_issue: bool, confidence: float, expected: str
+) -> None:
     state = CausalExplainerState(
         incident=_make_incident(),
-        hypotheses=[{"description": description, "confidence": confidence}],
+        hypotheses=[
+            {
+                "description": "some cause",
+                "confidence": confidence,
+                "implies_contract_issue": implies_contract_issue,
+            }
+        ],
     )
     assert route_after_explanation(state) == expected
 
@@ -251,6 +266,53 @@ def test_route_after_explanation(description: str, confidence: float, expected: 
 def test_route_after_explanation_ends_when_no_hypotheses() -> None:
     state = CausalExplainerState(incident=_make_incident(), hypotheses=[])
     assert route_after_explanation(state) == "end"
+
+
+def test_route_after_explanation_does_not_false_trigger_on_incidental_wording() -> None:
+    # Regression test for a real bug found against a live incident: the old
+    # keyword-matching implementation fired on "the freshness SLA was
+    # violated" -- text that just names which check fired -- even though the
+    # hypothesis wasn't arguing the contract's rule was wrong. The explicit
+    # implies_contract_issue field replaces that guess with the LLM's own
+    # judgment, made at synthesis time with full context.
+    state = CausalExplainerState(
+        incident=_make_incident(),
+        hypotheses=[
+            {
+                "description": (
+                    "The data ingestion process stopped, resulting in no new records "
+                    "being added, causing the freshness SLA to be violated."
+                ),
+                "confidence": 0.8,
+                "implies_contract_issue": False,
+            }
+        ],
+    )
+    assert route_after_explanation(state) == "end"
+
+
+def test_refinement_prompt_is_grounded_in_cited_evidence_not_just_description() -> None:
+    # Regression test: the refinement-drafting prompt used to pass only the
+    # hypothesis's free-text description into the fix-drafting LLM call --
+    # never the cited_evidence that grounds it -- so a contract fix could be
+    # drafted from a summary of a summary instead of the actual evidence.
+    incident = _make_incident()
+    state = CausalExplainerState(
+        incident=incident,
+        hypotheses=[
+            {
+                "description": "the freshness SLA is miscalibrated for this dataset",
+                "cited_evidence": "'age_seconds': 82390987.36, 'max_age_seconds': 86400.0",
+                "confidence": 0.7,
+                "implies_contract_issue": True,
+            }
+        ],
+    )
+
+    prompt = _build_refinement_prompt(state, current_contract_yaml="dataset_id: orders")
+
+    assert "82390987.36" in prompt
+    assert "86400.0" in prompt
 
 
 def test_propose_refinement_persists_proposal_against_incidents_contract_version(
@@ -305,6 +367,7 @@ def test_full_graph_runs_end_to_end_and_proposes_a_refinement(
                 cited_evidence="contract rule",
                 description="contract rule too strict for this column",
                 confidence=0.8,
+                implies_contract_issue=True,
             )
         ]
     )
@@ -362,6 +425,7 @@ def test_full_graph_omits_refinement_proposal_key_when_routed_to_end(
                 cited_evidence="unrelated finding",
                 description="an unrelated upstream job failure",
                 confidence=0.6,
+                implies_contract_issue=False,
             )
         ]
     )

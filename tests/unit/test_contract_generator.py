@@ -181,6 +181,29 @@ def test_build_draft_prompt_omits_feedback_section_on_first_attempt() -> None:
     assert "rejected during review" not in prompt
 
 
+def test_build_draft_prompt_includes_distinct_count_for_uniqueness_judgment() -> None:
+    # Regression test for a real bug: the prompt used to only pass semantic_type
+    # and null% into the draft step, never distinct_count -- so the LLM had to
+    # guess "unique" from the column name alone (e.g. assuming any "_id" column
+    # is unique) instead of the actual cardinality data profile_column already
+    # computes. Confirmed against a real customer_id column that repeats across
+    # rows: the agent sometimes marked it unique anyway before this fix.
+    state = ContractGeneratorState(
+        dataset_id="orders",
+        columns={"customer_id": "VARCHAR"},
+        column_profiles={"customer_id": {"null_percent": 0.0, "distinct_count": 3}},
+        samples=[{"customer_id": "c1"}, {"customer_id": "c2"}, {"customer_id": "c1"}],
+    )
+
+    prompt = _build_draft_prompt(state)
+
+    assert "distinct_count = 3" in prompt
+    assert "out of 3 sampled rows" in prompt
+    assert "regardless of what the column name suggests" in prompt
+    assert "REQUIRED booleans" in prompt
+    assert "never omit them or leave them null" in prompt
+
+
 def test_self_critique_approved_does_not_bump_revision_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

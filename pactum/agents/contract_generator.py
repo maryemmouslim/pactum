@@ -59,10 +59,15 @@ def classify_semantics(state: ContractGeneratorState) -> ContractGeneratorState:
 
 
 def _build_draft_prompt(state: ContractGeneratorState) -> str:
+    sample_count = len(state.samples)
     columns_desc = "\n".join(
         f"- {name} ({data_type}): semantic type = "
         f"{state.semantic_classifications.get(name, {}).get('label', 'unknown')}, "
-        f"null% = {state.column_profiles.get(name, {}).get('null_percent', 'unknown')}"
+        f"null% = {state.column_profiles.get(name, {}).get('null_percent', 'unknown')}, "
+        f"distinct_count = {state.column_profiles.get(name, {}).get('distinct_count', 'unknown')} "
+        f"(out of {sample_count} sampled rows), "
+        f"min = {state.column_profiles.get(name, {}).get('min', 'unknown')}, "
+        f"max = {state.column_profiles.get(name, {}).get('max', 'unknown')}"
         for name, data_type in (state.columns or {}).items()
     )
     upstream_desc = "\n".join(c.yaml for c in state.upstream_contracts) or "None"
@@ -81,9 +86,20 @@ def _build_draft_prompt(state: ContractGeneratorState) -> str:
         "Propose a data contract for this dataset: for each column, classify its "
         "semantic type, decide whether it holds sensitive data (set sensitivity=true "
         "if so), and propose reasonable constraints (nullable, unique, min/max range, "
-        "allowed values, or a regex pattern) based on the stats and samples above. "
-        "Also propose a dataset-level freshness SLA and completeness SLA if the data "
-        "supports one."
+        "allowed values, or a regex pattern) based on the stats and samples above.\n\n"
+        "unique and nullable are REQUIRED booleans -- always set them to true or "
+        "false, never omit them or leave them null, even if you're not fully "
+        "certain. distinct_count matching the sampled row count is a NECESSARY "
+        "condition for unique=true (if it doesn't match, the column is definitely "
+        "not unique, full stop, regardless of what the column name suggests -- e.g. "
+        "an '_id' column that repeats in the data above is not unique). But it is "
+        "NOT sufficient on its own: only set unique=true when uniqueness is also a "
+        "constraint the system should actually enforce going forward (a natural "
+        "key or identifier). A column whose sampled values happen to all be "
+        "distinct by coincidence (e.g. timestamps, free-text) should stay "
+        "unique=false even if distinct_count matches the sample size -- when in "
+        "doubt, default to false rather than emitting null. Also propose a "
+        "dataset-level freshness SLA and completeness SLA if the data supports one."
     )
 
 
