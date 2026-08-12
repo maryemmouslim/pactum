@@ -24,6 +24,9 @@ dependencies = [
     "whylogs>=1.6.4",
 ]
 
+[project.scripts]
+pactum = "pactum.cli:main"
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

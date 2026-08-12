@@ -1,0 +1,6 @@
+check_type: range
+column: amount
+expected_cause: >
+  Some amount values fall outside the allowed range (e.g. a negative value),
+  likely caused by a sign or unit conversion bug, or a refund/credit being
+  recorded through the same field as regular order amounts.

@@ -43,6 +43,17 @@ class Hypothesis(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     suggested_action: str | None = None
     related_incident_id: UUID | None = None
+    cited_evidence: str | None = Field(
+        default=None,
+        description="The exact value(s) or fact(s) from the incident's evidence this "
+        "hypothesis is grounded in, quoted directly rather than paraphrased.",
+    )
+    implies_contract_issue: bool = Field(
+        default=False,
+        description="True only if this hypothesis says the contract's rule itself is "
+        "wrong (too strict, too loose, missing, stale) -- not just that a check failed "
+        "or the data/pipeline broke.",
+    )
 
 
 class Explanation(BaseModel):

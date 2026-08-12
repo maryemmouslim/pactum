@@ -1,0 +1,5 @@
+check_type: uniqueness
+column: order_id
+expected_cause: >
+  Upstream deduplication failed or a retry double-wrote a record, causing the
+  same order_id to appear more than once when it should be unique.

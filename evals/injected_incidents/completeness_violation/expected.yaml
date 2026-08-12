@@ -1,0 +1,6 @@
+check_type: completeness_sla
+column: customer_id
+expected_cause: >
+  A large fraction of customer_id values are missing (null/empty) -- likely
+  caused by an upstream extraction or join step failing to populate the
+  field for most records.

@@ -1,0 +1,6 @@
+check_type: schema
+column: null
+expected_cause: >
+  A pipeline deployment recorded right around the same time as this incident
+  dropped the 'status' column from the dataset's output -- the deployment is
+  the direct cause of this schema change.

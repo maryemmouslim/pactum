@@ -1,0 +1,5 @@
+check_type: psi
+column: amount
+expected_cause: >
+  The distribution of the 'amount' column shifted dramatically to a much
+  higher range compared to its historical baseline.

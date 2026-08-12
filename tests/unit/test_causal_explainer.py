@@ -5,6 +5,7 @@ import pytest
 
 from pactum.agents.causal_explainer import (
     _build_synthesis_prompt,
+    _HypothesisDraft,
     _HypothesisList,
     _RefinementDraft,
     build_causal_explainer_graph,
@@ -16,7 +17,7 @@ from pactum.agents.causal_explainer import (
 )
 from pactum.agents.state import CausalExplainerState
 from pactum.lineage.graph import LineageGraph
-from pactum.models import Explanation, Hypothesis, Incident, RefinementProposal
+from pactum.models import Explanation, Incident, RefinementProposal
 
 
 def _make_incident(**overrides: object) -> Incident:
@@ -124,13 +125,69 @@ def test_synthesis_prompt_reflects_actual_finding_content_not_just_tool_names() 
     assert "region" not in prompt_without_change
 
 
+def test_synthesis_prompt_foregrounds_the_incidents_own_payload_as_evidence() -> None:
+    # Regression test: the payload used to sit alongside plain metadata lines
+    # (kind, severity) with no indication it counts as evidence, while the
+    # prompt told the LLM to ground hypotheses only in "the findings above" --
+    # for check types with no dedicated investigation tool (e.g. uniqueness,
+    # where nothing re-confirms the duplicate values found), every finding
+    # comes back empty and the LLM had nothing it was told to ground on, even
+    # though the payload itself already answers what went wrong.
+    incident = _make_incident(check_type="uniqueness", column_name="order_id")
+    incident.payload["duplicate_values"] = ["o1"]
+    state = CausalExplainerState(incident=incident, findings=[])
+
+    prompt = _build_synthesis_prompt(state)
+
+    assert "duplicate_values" in prompt
+    assert "direct evidence" in prompt
+    assert "must be grounded in the check's own payload or a technical finding" in prompt
+
+
+def test_synthesis_prompt_separates_technical_findings_from_contextual_signals() -> None:
+    # Regression test: a calendar note describing a plausible-sounding cause
+    # used to sit in the same "Investigation findings" bucket as schema_diff's
+    # actual live-data confirmation, with no signal that one is verified and
+    # the other is just someone's unverified description -- the LLM ended up
+    # citing the narrative note over the harder technical evidence even when
+    # both were available and agreed. Technical and contextual findings must
+    # render in visibly separate sections.
+    incident = _make_incident(check_type="schema", column_name=None)
+    state = CausalExplainerState(
+        incident=incident,
+        findings=[
+            {"tool": "schema_diff", "result": {"removed_columns": ["status"]}},
+            {
+                "tool": "calendar_events",
+                "result": {"events": [{"description": "deployed v2.3, dropped status field"}]},
+            },
+        ],
+    )
+
+    prompt = _build_synthesis_prompt(state)
+
+    assert "Technical findings" in prompt
+    assert "Contextual signals" in prompt
+    technical_section = prompt.split("Technical findings")[1].split("Contextual signals")[0]
+    contextual_section = prompt.split("Contextual signals")[1]
+    assert "removed_columns" in technical_section
+    assert "removed_columns" not in contextual_section
+    assert "deployed v2.3" in contextual_section
+    assert "deployed v2.3" not in technical_section
+    assert "not sufficient grounding" in prompt
+
+
 def test_synthesize_hypotheses_sorts_by_confidence_descending(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_result = _HypothesisList(
         hypotheses=[
-            Hypothesis(description="low confidence cause", confidence=0.2),
-            Hypothesis(description="high confidence cause", confidence=0.9),
+            _HypothesisDraft(
+                cited_evidence="evidence A", description="low confidence cause", confidence=0.2
+            ),
+            _HypothesisDraft(
+                cited_evidence="evidence B", description="high confidence cause", confidence=0.9
+            ),
         ]
     )
     monkeypatch.setattr(
@@ -244,7 +301,11 @@ def test_full_graph_runs_end_to_end_and_proposes_a_refinement(
 
     fake_hypotheses = _HypothesisList(
         hypotheses=[
-            Hypothesis(description="contract rule too strict for this column", confidence=0.8)
+            _HypothesisDraft(
+                cited_evidence="contract rule",
+                description="contract rule too strict for this column",
+                confidence=0.8,
+            )
         ]
     )
     fake_refinement = _RefinementDraft(kind="relaxation", proposed_yaml="dataset_id: orders")
@@ -296,7 +357,13 @@ def test_full_graph_omits_refinement_proposal_key_when_routed_to_end(
     )
 
     fake_hypotheses = _HypothesisList(
-        hypotheses=[Hypothesis(description="an unrelated upstream job failure", confidence=0.6)]
+        hypotheses=[
+            _HypothesisDraft(
+                cited_evidence="unrelated finding",
+                description="an unrelated upstream job failure",
+                confidence=0.6,
+            )
+        ]
     )
     monkeypatch.setattr(
         "pactum.agents.causal_explainer.get_llm", lambda role="reasoning": FakeLLM(fake_hypotheses)

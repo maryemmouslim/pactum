@@ -57,6 +57,27 @@ def list_pending_refinements() -> list[RefinementProposal]:
     return [_row_to_refinement(row) for row in rows]
 
 
+def list_pending_refinements_for_dataset(dataset_id: str) -> list[RefinementProposal]:
+    """Return pending refinement proposals for one dataset's incidents, oldest first.
+
+    Joins against incidents (refinements don't carry dataset_id themselves)
+    -- used by the UI's per-dataset review section and its signal badge.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT r.id, r.incident_id, r.contract_id, r.kind, r.proposed_yaml, r.status,
+                   r.reason, r.created_at
+            FROM refinements r
+            JOIN incidents i ON i.id = r.incident_id
+            WHERE i.dataset_id = %(dataset_id)s AND r.status = 'pending'
+            ORDER BY r.created_at ASC
+            """,
+            {"dataset_id": dataset_id},
+        ).fetchall()
+    return [_row_to_refinement(row) for row in rows]
+
+
 def update_refinement_status(
     refinement_id: UUID,
     status: Literal["accepted", "rejected"],

@@ -1,0 +1,6 @@
+check_type: referential_integrity
+column: customer_id
+expected_cause: >
+  An order references a customer_id that doesn't exist in the customers
+  dataset -- likely because the referenced customer record was deleted, or
+  the order was created without a valid corresponding customer.

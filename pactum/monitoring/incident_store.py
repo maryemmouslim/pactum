@@ -107,6 +107,28 @@ def find_related_incidents(
         return [_row_to_incident(row) for row in rows]
 
 
+def list_incidents_for_dataset(dataset_id: str, *, limit: int = 20) -> list[Incident]:
+    """Return the most recent incidents for one dataset, newest first.
+
+    Used by the UI's per-dataset view (and its "needs attention" signal
+    badge) -- unlike list_incidents_since, which is global and cursor-based
+    for the sensor's polling loop.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, dataset_id, detected_at, kind, severity, signature, payload,
+                   contract_version_id, check_type, column_name
+            FROM incidents
+            WHERE dataset_id = %(dataset_id)s
+            ORDER BY detected_at DESC
+            LIMIT %(limit)s
+            """,
+            {"dataset_id": dataset_id, "limit": limit},
+        ).fetchall()
+    return [_row_to_incident(row) for row in rows]
+
+
 def list_incidents_since(since: datetime | None, *, limit: int = 50) -> list[Incident]:
     """Return incidents detected after `since`, oldest first (for cursor-based polling).
 

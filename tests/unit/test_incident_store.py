@@ -4,7 +4,12 @@ from datetime import UTC, datetime
 import pytest
 
 from pactum.models import Incident
-from pactum.monitoring.incident_store import _json_safe, build_signature, emit_incident
+from pactum.monitoring.incident_store import (
+    _json_safe,
+    build_signature,
+    emit_incident,
+    list_incidents_for_dataset,
+)
 
 
 def test_build_signature_is_deterministic() -> None:
@@ -196,3 +201,76 @@ def test_emit_incident_raises_if_conflict_but_no_row_found(
             contract_version_id=uuid.uuid4(),
             column="amount",
         )
+
+
+class FakeListConnection:
+    def __init__(self, rows: list[tuple[object, ...]] | None = None) -> None:
+        self.executed: list[tuple[str, dict[str, object]]] = []
+        self._rows = rows or []
+
+    def __enter__(self) -> "FakeListConnection":
+        return self
+
+    def __exit__(self, *args: object) -> bool:
+        return False
+
+    def execute(self, sql: str, params: dict[str, object]) -> "FakeListConnection":
+        self.executed.append((sql, params))
+        return self
+
+    def fetchall(self) -> list[tuple[object, ...]]:
+        return self._rows
+
+
+def _incident_row(incident: Incident) -> tuple[object, ...]:
+    return (
+        incident.id,
+        incident.dataset_id,
+        incident.detected_at,
+        incident.kind,
+        incident.severity,
+        incident.signature,
+        incident.payload,
+        incident.contract_version_id,
+        incident.check_type,
+        incident.column_name,
+    )
+
+
+def test_list_incidents_for_dataset_returns_matching_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    incident = Incident(
+        id=uuid.uuid4(),
+        dataset_id="orders",
+        detected_at=datetime.now(UTC),
+        kind="violation",
+        severity="high",
+        signature="sig",
+        payload={},
+        contract_version_id=uuid.uuid4(),
+        check_type="uniqueness",
+        column_name="order_id",
+    )
+    fake_conn = FakeListConnection(rows=[_incident_row(incident)])
+    monkeypatch.setattr("pactum.monitoring.incident_store._connect", lambda: fake_conn)
+
+    results = list_incidents_for_dataset("orders")
+
+    assert results == [incident]
+    sql, params = fake_conn.executed[0]
+    assert "WHERE dataset_id = %(dataset_id)s" in sql
+    assert params["dataset_id"] == "orders"
+    assert params["limit"] == 20
+
+
+def test_list_incidents_for_dataset_respects_custom_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_conn = FakeListConnection(rows=[])
+    monkeypatch.setattr("pactum.monitoring.incident_store._connect", lambda: fake_conn)
+
+    list_incidents_for_dataset("orders", limit=5)
+
+    _, params = fake_conn.executed[0]
+    assert params["limit"] == 5

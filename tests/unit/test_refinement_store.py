@@ -7,6 +7,7 @@ from pactum.models import RefinementProposal
 from pactum.monitoring.refinement_store import (
     get_refinements_for_incident,
     list_pending_refinements,
+    list_pending_refinements_for_dataset,
     save_refinement_proposal,
     update_refinement_status,
 )
@@ -98,6 +99,22 @@ def test_list_pending_refinements_returns_all_pending(monkeypatch: pytest.Monkey
     assert results == [proposal]
     sql, _ = fake_conn.executed[0]
     assert "WHERE status = 'pending'" in sql
+
+
+def test_list_pending_refinements_for_dataset_joins_against_incidents(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proposal = _make_proposal()
+    fake_conn = FakeConnection(rows=[_row_for(proposal)])
+    monkeypatch.setattr("pactum.monitoring.refinement_store._connect", lambda: fake_conn)
+
+    results = list_pending_refinements_for_dataset("orders")
+
+    assert results == [proposal]
+    sql, params = fake_conn.executed[0]
+    assert "JOIN incidents" in sql
+    assert "status = 'pending'" in sql
+    assert params["dataset_id"] == "orders"
 
 
 def test_update_refinement_status_accepts_and_returns_updated_row(

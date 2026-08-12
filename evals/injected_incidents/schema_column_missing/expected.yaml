@@ -1,0 +1,5 @@
+check_type: schema
+column: null
+expected_cause: >
+  The 'status' column is missing from the data entirely -- an upstream job
+  stopped populating a column the contract expects.

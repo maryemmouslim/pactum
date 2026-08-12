@@ -1,0 +1,6 @@
+check_type: regex
+column: email
+expected_cause: >
+  Some email values don't match a valid email format -- likely caused by
+  malformed or free-text input entering a field meant to hold a validated
+  email address, e.g. a broken upstream form validation or transformation.

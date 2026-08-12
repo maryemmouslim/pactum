@@ -1,0 +1,5 @@
+check_type: freshness_sla
+column: created_at
+expected_cause: >
+  Upstream data ingestion stopped or stalled -- no fresh rows have arrived
+  recently, so the newest record is far older than the freshness SLA allows.
