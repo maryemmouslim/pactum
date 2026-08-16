@@ -1,0 +1,58 @@
+# Frozen record of one human's diagnosis of each evals/injected_incidents/
+# scenario, formed blind -- from the same investigation evidence the causal
+# explainer agent's tools gather, without reading expected.yaml or the
+# agent's own output first. See README.md in this folder for methodology.
+#
+# This file is a recorded judgment call, not something to regenerate: a
+# human diagnosis can't be recomputed from code the way the agent's answer
+# can. Re-running `pactum eval-human-benchmark` re-scores the *agent* fresh
+# each time against these frozen human answers.
+
+completeness_violation: >
+  customer_id is null/missing for most rows (3 of 4) -- most likely an
+  upstream extraction or join step failed to populate the field for most
+  records.
+
+deployment_correlated_schema_change: >
+  The 'status' column was removed because the v2.3 ingestion pipeline
+  deployment (recorded in the calendar right around the incident time)
+  dropped the legacy 'status' field from its output schema -- the
+  deployment is the direct cause.
+
+distribution_shift_amount: >
+  The 'amount' column underwent a total, systematic shift (KS=1.0, complete
+  non-overlap between reference and current) rather than gradual drift --
+  most likely a unit/scale or currency-conversion bug upstream causing
+  amounts to land in a different range than before.
+
+freshness_violation: >
+  Upstream ingestion stopped or stalled -- no new rows have landed in ~3
+  days, far exceeding the 1-hour freshness SLA; no deploy or log evidence
+  points to a specific trigger.
+
+range_violation: >
+  A single amount value (-75.0) fell outside the allowed [0,1000] range with
+  no broader distribution drift -- most likely a refund/credit was recorded
+  through the same 'amount' field as regular order amounts (or a sign bug),
+  rather than data corruption across the column.
+
+referential_integrity_violation: >
+  An order references customer_id 'c99' that doesn't exist in the customers
+  dataset -- likely the customer record was deleted after the order
+  referenced it, or the order was created before/without a valid matching
+  customer record.
+
+regex_violation: >
+  A literal placeholder/sentinel string ('not-a-valid-email') was written
+  into the email column -- most likely a broken upstream form validation or
+  default-value fallback let invalid free-text through instead of a real
+  (if malformed) email address.
+
+schema_column_missing: >
+  The 'status' column is missing from the data entirely -- an upstream job
+  stopped populating a column the contract expects.
+
+uniqueness_violation: >
+  Duplicate order_id 'o1' appeared -- most likely an upstream retry or
+  at-least-once delivery re-wrote the same record without idempotent
+  deduplication.

@@ -1,0 +1,220 @@
+dataset_id: train
+columns:
+  - name: Row ID
+    data_type: BIGINT
+    semantic_type: identifier
+    sensitivity: false
+    nullable: false
+    unique: true
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: Order ID
+    data_type: VARCHAR
+    semantic_type: identifier
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: Order Date
+    data_type: DATE
+    semantic_type: timestamp
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: Ship Date
+    data_type: DATE
+    semantic_type: timestamp
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: Ship Mode
+    data_type: VARCHAR
+    semantic_type: categorical
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: ["First Class", "Second Class", "Standard Class", "Same Day"]
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: Customer ID
+    data_type: VARCHAR
+    semantic_type: identifier
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: Customer Name
+    data_type: VARCHAR
+    semantic_type: pii
+    sensitivity: true
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: Segment
+    data_type: VARCHAR
+    semantic_type: categorical
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: ["Consumer", "Corporate", "Home Office"]
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: Country
+    data_type: VARCHAR
+    semantic_type: categorical
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: ["United States"]
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: City
+    data_type: VARCHAR
+    semantic_type: categorical
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: State
+    data_type: VARCHAR
+    semantic_type: categorical
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: Postal Code
+    data_type: BIGINT
+    semantic_type: identifier
+    sensitivity: false
+    nullable: true
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: Region
+    data_type: VARCHAR
+    semantic_type: categorical
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: ["South", "West", "Central", "East"]
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: Product ID
+    data_type: VARCHAR
+    semantic_type: identifier
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: Category
+    data_type: VARCHAR
+    semantic_type: categorical
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: ["Furniture", "Office Supplies", "Technology"]
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: Sub-Category
+    data_type: VARCHAR
+    semantic_type: categorical
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: Product Name
+    data_type: VARCHAR
+    semantic_type: free_text
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: null
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+  - name: Sales
+    data_type: DOUBLE
+    semantic_type: currency
+    sensitivity: false
+    nullable: false
+    unique: false
+    min_value: 0.0
+    max_value: null
+    allowed_values: null
+    regex_pattern: null
+    references_dataset: null
+    references_column: null
+freshness_sla_seconds: null
+completeness_sla: null

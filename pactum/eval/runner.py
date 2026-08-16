@@ -1,20 +1,16 @@
-import importlib.util
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType
 
-import psycopg
 import yaml
 
 from pactum.agents.causal_explainer import build_causal_explainer_graph
 from pactum.agents.state import CausalExplainerState
 from pactum.contract_schema import parse_contract_yaml
+from pactum.eval._shared import cleanup_eval_dataset, import_module
 from pactum.eval.judge import judge_hypothesis
 from pactum.monitoring.incident_store import build_signature, find_open_incident
 from pactum.monitoring.runner import evaluate_contract
 from pactum.registry.contract_registry import get_active
-from pactum.settings import settings
 from pactum.sources.registry import load_persisted_registrations
 
 
@@ -27,46 +23,13 @@ class ScenarioResult:
     hypothesis: str | None = None
 
 
-def _import(path: Path) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(path.stem, path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Could not load module from {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def _cleanup(dataset_id: str) -> None:
-    """Delete every row an eval scenario may have created for this dataset_id.
-
-    Runs both before and after each scenario so a rerun always starts clean
-    instead of accumulating rows across runs (e.g. tripping the
-    single-active-contract-version constraint or an incident signature clash).
-    """
-    url = settings.database_url.replace("postgresql+psycopg://", "postgresql://")
-    with psycopg.connect(url) as conn:
-        conn.execute(
-            "DELETE FROM refinements WHERE incident_id IN "
-            "(SELECT id FROM incidents WHERE dataset_id = %(id)s)",
-            {"id": dataset_id},
-        )
-        conn.execute(
-            "DELETE FROM explanations WHERE incident_id IN "
-            "(SELECT id FROM incidents WHERE dataset_id = %(id)s)",
-            {"id": dataset_id},
-        )
-        conn.execute("DELETE FROM incidents WHERE dataset_id = %(id)s", {"id": dataset_id})
-        conn.execute("DELETE FROM contracts WHERE dataset_id = %(id)s", {"id": dataset_id})
-
-
 def run_scenario(scenario_dir: Path) -> ScenarioResult:
-    setup_mod = _import(scenario_dir / "setup.py")
-    inject_mod = _import(scenario_dir / "inject.py")
+    setup_mod = import_module(scenario_dir / "setup.py")
+    inject_mod = import_module(scenario_dir / "inject.py")
     expected = yaml.safe_load((scenario_dir / "expected.yaml").read_text())
 
     dataset_id = f"eval_{scenario_dir.name}"
-    _cleanup(dataset_id)  # clear any leftover state from a previous run before starting
+    cleanup_eval_dataset(dataset_id)  # clear any leftover state from a previous run
 
     try:
         context = setup_mod.setup(dataset_id)
@@ -98,7 +61,7 @@ def run_scenario(scenario_dir: Path) -> ScenarioResult:
             scenario_dir.name, verdict.correct, verdict.reasoning, top.confidence, top.description
         )
     finally:
-        _cleanup(dataset_id)
+        cleanup_eval_dataset(dataset_id)
 
 
 def print_report(results: list[ScenarioResult]) -> None:

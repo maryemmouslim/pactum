@@ -11,7 +11,6 @@ def render_contract(contract: Contract, parsed: ParsedContract) -> None:
     approving it) and the datasets page (viewing any dataset's current
     contract), so both stay in sync instead of drifting into two renderings.
     """
-    st.code(contract.yaml, language="yaml")
     st.dataframe(
         [
             {
@@ -39,3 +38,5 @@ def render_contract(contract: Contract, parsed: ParsedContract) -> None:
         f"Dataset-level: freshness SLA = {parsed.freshness_sla_seconds}s, "
         f"completeness SLA = {parsed.completeness_sla}"
     )
+    with st.expander("Raw YAML"):
+        st.code(contract.yaml, language="yaml")

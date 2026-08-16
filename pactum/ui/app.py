@@ -26,6 +26,17 @@ st.html(
     """
 )
 
+# Rendered before st.navigation() so it lands above the nav links in the
+# sidebar -- the app otherwise has no identity anywhere but the browser tab.
+with st.sidebar:
+    st.markdown(
+        "### \U0001f4cb Pactum\n"
+        "<span style='color:#9CA3AF;font-size:0.85rem;'>"
+        "Living data contracts</span>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("")
+
 # Registered here, not just on the ingest page -- so the Datasets page works
 # correctly even if a user opens it directly without visiting Data &
 # Contracts first this session.

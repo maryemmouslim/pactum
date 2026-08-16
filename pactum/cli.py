@@ -24,6 +24,22 @@ def main() -> None:
         help="Directory of gold contract YAML files (searched recursively)",
     )
 
+    human_benchmark_parser = subparsers.add_parser(
+        "eval-human-benchmark",
+        help="Compare the Causal Explanation Agent's accuracy against a recorded human "
+        "baseline on the same injected-incident scenarios",
+    )
+    human_benchmark_parser.add_argument(
+        "--scenarios",
+        default="evals/injected_incidents",
+        help="Directory of scenario subdirectories (each with setup.py, inject.py, expected.yaml)",
+    )
+    human_benchmark_parser.add_argument(
+        "--hypotheses",
+        default="evals/human_benchmark/human_hypotheses.yaml",
+        help="YAML file mapping scenario name -> recorded human hypothesis",
+    )
+
     args = parser.parse_args()
 
     if args.command == "eval":
@@ -34,3 +50,7 @@ def main() -> None:
         from pactum.eval.contract_runner import run_gold_contracts
 
         run_gold_contracts(args.gold)
+    elif args.command == "eval-human-benchmark":
+        from pactum.eval.human_benchmark import run_human_benchmark
+
+        run_human_benchmark(args.scenarios, args.hypotheses)

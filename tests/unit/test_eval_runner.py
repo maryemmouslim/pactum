@@ -76,7 +76,8 @@ class FakeApp:
 def _patch_happy_path(monkeypatch: pytest.MonkeyPatch, dataset_id: str) -> list[str]:
     cleanup_calls: list[str] = []
     monkeypatch.setattr(
-        "pactum.eval.runner._cleanup", lambda dataset_id: cleanup_calls.append(dataset_id)
+        "pactum.eval.runner.cleanup_eval_dataset",
+        lambda dataset_id: cleanup_calls.append(dataset_id),
     )
     monkeypatch.setattr(
         "pactum.eval.runner.get_active", lambda dataset_id: _make_contract(dataset_id)
@@ -138,7 +139,8 @@ def test_run_scenario_fails_without_crashing_when_no_active_contract(
     scenario_dir = _write_scenario(tmp_path)
     cleanup_calls: list[str] = []
     monkeypatch.setattr(
-        "pactum.eval.runner._cleanup", lambda dataset_id: cleanup_calls.append(dataset_id)
+        "pactum.eval.runner.cleanup_eval_dataset",
+        lambda dataset_id: cleanup_calls.append(dataset_id),
     )
     monkeypatch.setattr("pactum.eval.runner.get_active", lambda dataset_id: None)
 
@@ -153,7 +155,7 @@ def test_run_scenario_fails_without_crashing_when_no_incident_detected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scenario_dir = _write_scenario(tmp_path)
-    monkeypatch.setattr("pactum.eval.runner._cleanup", lambda dataset_id: None)
+    monkeypatch.setattr("pactum.eval.runner.cleanup_eval_dataset", lambda dataset_id: None)
     monkeypatch.setattr(
         "pactum.eval.runner.get_active", lambda dataset_id: _make_contract(dataset_id)
     )
@@ -182,7 +184,8 @@ def test_cleanup_runs_even_when_inject_raises(
     )
     cleanup_calls: list[str] = []
     monkeypatch.setattr(
-        "pactum.eval.runner._cleanup", lambda dataset_id: cleanup_calls.append(dataset_id)
+        "pactum.eval.runner.cleanup_eval_dataset",
+        lambda dataset_id: cleanup_calls.append(dataset_id),
     )
 
     with pytest.raises(RuntimeError, match="boom"):
@@ -203,7 +206,7 @@ def test_run_scenario_safely_converts_a_crash_into_a_failed_result(
     (scenario_dir / "expected.yaml").write_text(
         "check_type: schema\ncolumn: null\nexpected_cause: x\n"
     )
-    monkeypatch.setattr("pactum.eval.runner._cleanup", lambda dataset_id: None)
+    monkeypatch.setattr("pactum.eval.runner.cleanup_eval_dataset", lambda dataset_id: None)
 
     result = _run_scenario_safely(scenario_dir)
 

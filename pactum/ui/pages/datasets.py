@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from pactum.contract_schema import parse_contract_yaml
 from pactum.monitoring.explanation_store import (
@@ -66,10 +68,11 @@ if not datasets:
 
 statuses = [_dataset_status(dataset_id) for dataset_id in datasets]
 
-metric_cols = st.columns(3)
-metric_cols[0].metric("Datasets", len(datasets))
-metric_cols[1].metric("Pending proposals", sum(s.pending_proposals for s in statuses))
-metric_cols[2].metric("Incidents (7d)", sum(s.recent_incidents for s in statuses))
+with st.container(border=True):
+    metric_cols = st.columns(3)
+    metric_cols[0].metric("Datasets", len(datasets))
+    metric_cols[1].metric("Pending proposals", sum(s.pending_proposals for s in statuses))
+    metric_cols[2].metric("Incidents (7d)", sum(s.recent_incidents for s in statuses))
 
 st.subheader("Overview")
 if "selected_dataset_id" not in st.session_state:
@@ -96,12 +99,34 @@ for status in statuses:
                 "Open", key=f"open-{status.dataset_id}", disabled=is_selected, width="stretch"
             ):
                 st.session_state.selected_dataset_id = status.dataset_id
+                st.session_state.scroll_to_detail = True
                 st.rerun()
 
 selected = st.session_state.selected_dataset_id
 
 st.divider()
+st.markdown('<div id="dataset-detail"></div>', unsafe_allow_html=True)
 st.header(selected)
+
+if st.session_state.pop("scroll_to_detail", False):
+    # Overview list above pushes this section below the fold every time a
+    # dataset is opened -- without this, switching datasets silently leaves
+    # the user scrolled at the top of the page, behind the whole list.
+    components.html(
+        """<script>
+        // A delayed retry, not a single immediate call -- content still
+        // settling above the anchor (badges, buttons finishing their paint)
+        // can shift it after one scroll, so re-assert the position twice.
+        function scrollToDetail() {
+            window.parent.document.getElementById("dataset-detail")
+                ?.scrollIntoView({behavior: "instant", block: "start"});
+        }
+        scrollToDetail();
+        setTimeout(scrollToDetail, 250);
+        setTimeout(scrollToDetail, 700);
+        </script>""",
+        height=0,
+    )
 
 active_contract = get_active(selected)
 contract = active_contract
@@ -127,6 +152,14 @@ if contract is not None:
     except Exception as exc:  # noqa: BLE001
         incidents = []
         st.error(f"Could not load incidents: {exc}")
+    incidents_by_id = {incident.id: incident for incident in incidents}
+
+    def _incident_label(incident_id: UUID) -> str:
+        incident = incidents_by_id.get(incident_id)
+        if incident is None:
+            return f"incident {incident_id}"
+        target = f" on `{incident.column_name}`" if incident.column_name else " (dataset-level)"
+        return f"{incident.check_type}{target} — detected {incident.detected_at}"
 
     try:
         explanations = list_explanations_for_dataset(selected)
@@ -222,7 +255,7 @@ if contract is not None:
         if not explanations:
             st.caption("No incidents investigated yet for this dataset.")
         for explanation in explanations:
-            with st.expander(f"Incident {explanation.incident_id} — {explanation.created_at}"):
+            with st.expander(_incident_label(explanation.incident_id)):
                 for hypothesis in explanation.hypotheses:
                     st.write(
                         f"**{hypothesis.confidence:.0%} confidence** -- {hypothesis.description}"
@@ -245,7 +278,7 @@ if contract is not None:
         for proposal in pending_proposals:
             with st.container(border=True):
                 st.badge(proposal.kind, color="violet")
-                st.caption(f"incident {proposal.incident_id}")
+                st.caption(_incident_label(proposal.incident_id))
 
                 try:
                     proposal_explanations = get_explanations_for_incident(proposal.incident_id)
