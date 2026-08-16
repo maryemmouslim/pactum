@@ -40,6 +40,12 @@ def main() -> None:
         help="YAML file mapping scenario name -> recorded human hypothesis",
     )
 
+    subparsers.add_parser(
+        "mcp",
+        help="Run Pactum's MCP server (stdio) -- exposes read-only contract/incident/"
+        "explanation lookups plus run_checks to any MCP-compatible AI client",
+    )
+
     args = parser.parse_args()
 
     if args.command == "eval":
@@ -54,3 +60,7 @@ def main() -> None:
         from pactum.eval.human_benchmark import run_human_benchmark
 
         run_human_benchmark(args.scenarios, args.hypotheses)
+    elif args.command == "mcp":
+        from pactum.mcp.server import main as run_mcp_server
+
+        run_mcp_server()
